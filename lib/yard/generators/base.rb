@@ -1,4 +1,5 @@
 require 'erb'
+require 'tadpole'
 
 module YARD
   module Generators
@@ -7,21 +8,13 @@ module YARD
       include Helpers::FilterHelper
 
       class << self
-        def template_paths
-          @@template_paths ||= [TEMPLATE_ROOT]
-        end
-
         ##
-        # Convenience method to registering a template path.
-        # Equivalent to calling:
-        #   GeneratorName.template_paths.unshift(path)
+        # Registers a template path.
         # 
         # @param [String] path 
         #   the pathname to look for the template
-        # 
-        # @see template_paths
         def register_template_path(path)
-          template_paths.unshift(path)
+          Tadpole.register_template_path(path)
         end
         
         def before_section(*args)
@@ -283,3 +276,5 @@ module YARD
     end
   end
 end
+
+YARD::Generators::Base.register_template_path YARD::TEMPLATE_ROOT
