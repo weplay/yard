@@ -180,7 +180,21 @@ module YARD
           name.to_s
         end
       end
-      alias_method :to_s, :path
+      
+      def to_s(opts = nil)
+        if opts
+          opts = SymbolHash[
+            :format   => :text,
+            :template => :ri
+          ].update(opts)
+          template = Template(opts[:template], opts[:format], type)
+          template.new(:object => self).run
+        else
+          path
+        end
+      rescue Tadpole::Template::MissingSectionError
+        path
+      end
       
       def inspect
         "#<yardoc #{type} #{path}>"
