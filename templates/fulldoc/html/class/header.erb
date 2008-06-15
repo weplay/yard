@@ -1,0 +1,6 @@
+<div id="<%= anchor_for(object) %>" class="section class">
+  <h1 class="title"><%= h format_object_type(object) %>: <%= h object.path %></h1>
+  <div class="contents">
+    <%= yieldall %>
+  </div>
+</div>

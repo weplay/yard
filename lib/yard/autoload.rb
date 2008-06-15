@@ -47,6 +47,7 @@ module YARD
       autoload :FilterHelper,           'yard/generators/helpers/filter_helper'
       autoload :HtmlHelper,             'yard/generators/helpers/html_helper'
       autoload :MethodHelper,           'yard/generators/helpers/method_helper'
+      autoload :MethodListingHelper,    'yard/generators/helpers/method_listing_helper'
       autoload :UMLHelper,              'yard/generators/helpers/uml_helper'
     end
     

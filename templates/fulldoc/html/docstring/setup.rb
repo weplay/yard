@@ -1,0 +1,1 @@
+inherits '../../../ri/text/docstring'

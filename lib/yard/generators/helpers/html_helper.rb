@@ -26,9 +26,9 @@ module YARD
         text.gsub(/(\s)\{(\S+?)(?:\s(.+?))?\}(?=(?:[\s\.,:!;\?][^<>]*)?<\/(?!pre))/) do 
           name = $2
           title = $3 || $2
-          obj = P(current_object, name)
+          obj = P(object, name)
           if obj.is_a?(CodeObjects::Proxy)
-            log.warn "In documentation for #{current_object.path}: Cannot resolve link to #{obj.path} from text:"
+            log.warn "In documentation for #{object.path}: Cannot resolve link to #{obj.path} from text:"
             log.warn '...' + text[/(.{0,20}\{#{Regexp.quote name}.*?\}.{0,20})/, 1].gsub(/\n/,"\n\t") + '...'
           end
           
@@ -61,46 +61,46 @@ module YARD
         list.empty? ? "" : (brackets ? "[#{list.join(", ")}]" : list.join(", "))
       end
     
-      def link_object(object, otitle = nil, anchor = nil)
-        object = P(current_object, object) if object.is_a?(String)
-        title = h(otitle ? otitle.to_s : object.path)
+      def link_object(other, otitle = nil, anchor = nil)
+        obj = P(object, other) if other.is_a?(String)
+        title = h(otitle ? otitle.to_s : other.path)
         return title unless serializer
 
-        return title if object.is_a?(CodeObjects::Proxy)
+        return title if other.is_a?(CodeObjects::Proxy)
       
-        link = url_for(object, anchor)
+        link = url_for(other, anchor)
         link ? "<a href='#{link}' title='#{title}'>#{title}</a>" : title
       end
     
-      def anchor_for(object)
-        urlencode case object
+      def anchor_for(obj)
+        urlencode case obj
         when CodeObjects::MethodObject
-          "#{object.name}-#{object.scope}_#{object.type}"
+          "#{obj.name}-#{obj.scope}_#{obj.type}"
         when CodeObjects::Base
-          "#{object.name}-#{object.type}"
+          "#{obj.name}-#{obj.type}"
         when CodeObjects::Proxy
-          object.path
+          obj.path
         else
-          object.to_s
+          obj.to_s
         end
       end
     
-      def url_for(object, anchor = nil, relative = true)
+      def url_for(obj, anchor = nil, relative = true)
         link = nil
         return link unless serializer
         
-        if object.is_a?(CodeObjects::Base) && !object.is_a?(CodeObjects::NamespaceObject)
+        if obj.is_a?(CodeObjects::Base) && !obj.is_a?(CodeObjects::NamespaceObject)
           # If the object is not a namespace object make it the anchor.
-          anchor, object = object, object.namespace
+          anchor, obj = obj, obj.namespace
         end
         
-        objpath = serializer.serialized_path(object)
+        objpath = serializer.serialized_path(obj)
         return link unless objpath
       
         if relative
-          fromobj = current_object
-          if current_object.is_a?(CodeObjects::Base) && 
-              !current_object.is_a?(CodeObjects::NamespaceObject)
+          fromobj = object
+          if object.is_a?(CodeObjects::Base) && 
+              !object.is_a?(CodeObjects::NamespaceObject)
             fromobj = fromobj.namespace
           end
 

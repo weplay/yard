@@ -17,28 +17,6 @@ module YARD
           Tadpole.register_template_path(path)
         end
         
-        def before_section(*args)
-          if args.size == 1
-            before_section_filters.push [nil, args.first]
-          elsif args.size == 2
-            before_section_filters.push(args)
-          else
-            raise ArgumentError, "before_section takes a generator followed by a Proc/lambda or Symbol referencing the method name"
-          end
-        end
-        
-        def before_section_filters
-          @before_section_filters ||= []
-        end
-        
-        def before_generate(meth)
-          before_generate_filters.push(meth)
-        end
-        
-        def before_generate_filters
-          @before_generate_filters ||= []
-        end
-        
         def before_list(meth)
           before_list_filters.push(meth)
         end
@@ -109,9 +87,8 @@ module YARD
           @current_object = object
 
           next if call_verifier(object).is_a?(FalseClass)
-          next if run_before_generate(object).is_a?(FalseClass)
           
-          objout << render_sections(object, &block) 
+          objout << template_for(object).run(:object => object, &block) 
 
           if serializer && !ignore_serializer && !objout.empty?
             serializer.serialize(object, objout) 
@@ -143,138 +120,9 @@ module YARD
         end
       end
       
-      def run_before_generate(object)
-        self.class.before_generate_filters.each do |meth|
-          meth = method(meth) if meth.is_a?(Symbol)
-          result = meth.call *(meth.arity == 0 ? [] : [object])
-          return result if result.is_a?(FalseClass)
-        end
-      end
-
-      def run_before_sections(section, object)
-        result = before_section(section, object)
-        return result if result.is_a?(FalseClass)
-        
-        self.class.before_section_filters.each do |info|
-          result, sec, meth = nil, *info
-          if sec.nil? || sec == section
-            meth = method(meth) if meth.is_a?(Symbol)
-            args = [section, object]
-            if meth.arity == 1 
-              args = [object]
-            elsif meth.arity == 0
-              args = []
-            end
-
-            result = meth.call(*args)
-            log.debug("Calling before section filter for %s%s with `%s`, result = %s" % [
-              self.class.class_name, section.inspect, object, 
-              result.is_a?(FalseClass) ? 'fail' : 'pass'
-            ])
-          end
-
-          return result if result.is_a?(FalseClass)
-        end
-      end
-      
-      def sections_for(object); [] end
-      
-      def before_section(section, object); end
-      
-      def render_sections(object, sections = nil)
-        sections ||= sections_for(object) || []
-
-        data = ""
-        sections.each_with_index do |section, index|
-          next if section.is_a?(Array)
-          
-          data << if sections[index+1].is_a?(Array)
-            render_section(section, object) do |obj|
-              tmp, @current_object = @current_object, obj
-              out = render_sections(obj, sections[index+1])
-              @current_object = tmp
-              out
-            end
-          else
-            render_section(section, object)
-          end
-        end
-        data
-      end
-
-      def render_section(section, object, &block)
-        begin
-          if section.is_a?(Class) && section <= Generators::Base
-            opts = options.dup
-            opts.update(:ignore_serializer => true)
-            sobj = section.new(opts)
-            sobj.generate(object, &block)
-          elsif section.is_a?(Generators::Base)
-            section.generate(object, &block)
-          elsif section.is_a?(Symbol) || section.is_a?(String)
-            return "" if run_before_sections(section, object).is_a?(FalseClass)
-
-            if section.is_a?(Symbol)
-              if respond_to?(section)
-                if method(section).arity != 1
-                  send(section, &block)
-                else
-                  send(section, object, &block) 
-                end || ""
-              else # treat it as a String
-                render(object, section, &block)
-              end
-            else
-              render(object, section, &block)
-            end
-          else
-            type = section.is_a?(String) || section.is_a?(Symbol) ? 'section' : 'generator'
-            log.warn "Ignoring invalid #{type} '#{section}' in #{self.class}"
-            ""
-          end
-        end
-      end
-      
-      def render(object, file = nil, locals = {}, &block)
-        if object.is_a?(Symbol)
-          object, file, locals = current_object, object, (file||{})
-        end
-        
-        __path = template_path(file.to_s + '.erb', generator_name)
-        __f = find_template(__path)
-        if __f
-          __l = locals.map {|k,v| "#{k} = #{v.inspect}" unless k.to_s == "__f" }.join(";")
-          begin
-            erb("<% #{__l} %>" + File.read(__f)).result(binding)
-          rescue => e
-            log.error "#{e.class.class_name}: #{e.message}"
-            log.error "in generator #{self.class} section #{file} on '#{object}'"
-            log.error e.backtrace[0..10].join("\n")
-            exit
-          end
-        else
-          log.warn "Cannot find template `#{__path}`"
-          ""
-        end
-      end
-      
-      def erb(str)
-        ERB.new(str, nil, '<>')
-      end
-      
-      def template_path(file, generator = generator_name)
-        File.join(template.to_s, generator, format.to_s, file.to_s)
-      end
-      
-      def find_template(path)
-        self.class.template_paths.each do |basepath| 
-          f = File.join(basepath, path)
-          return f if File.file?(f)
-        end
-        nil
+      def template_for(object)
+        Template(format, template).new(options)
       end
     end
   end
 end
-
-YARD::Generators::Base.register_template_path YARD::TEMPLATE_ROOT
