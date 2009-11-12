@@ -39,11 +39,3 @@ end
 ['autoload', 'globals'].each do |file| 
   require File.join(YARD::ROOT, 'yard', file)
 end
-
-# Load any plugins
-begin
-  require 'rubygems'
-  YARD.load_plugins
-rescue LoadError
-  log.debug "RubyGems is not present, skipping plugin loading"
-end
