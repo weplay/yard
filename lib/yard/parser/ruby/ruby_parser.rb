@@ -39,7 +39,6 @@ module YARD
           :END => "END",
           :alias => "alias",
           :array => :lbracket,
-          :aref => :lbracket,
           :arg_paren => :lparen,
           :begin => "begin",
           :blockarg => "&",
@@ -150,7 +149,8 @@ module YARD
         [:kw, :op].each do |event|
           module_eval(<<-eof, __FILE__, __LINE__ + 1)
             def on_#{event}(tok)
-              unless @tokens.last && @tokens.last[0] == :symbeg
+              unless @last_ns_token == [:kw, "def"] ||
+                  (@tokens.last && @tokens.last[0] == :symbeg)
                 (@map[tok] ||= []) << [lineno, charno]
               end
               visit_ns_token(:#{event}, tok, true)
@@ -185,6 +185,7 @@ module YARD
         def visit_ns_token(token, data, ast_token = false)
           add_token(token, data)
           ch = charno
+          @last_ns_token = [token, data]
           @charno += data.length
           @ns_charno = charno
           if ast_token
@@ -207,6 +208,7 @@ module YARD
         def on_body_stmt(*args)
           args.compact.size == 1 ? args.first : AstNode.new(:list, args)
         end
+        alias on_bodystmt on_body_stmt
         
         def on_assoc_new(*args)
           AstNode.new(:assoc, args)
@@ -222,6 +224,29 @@ module YARD
         
         def on_assoclist_from_args(*args)
           args.first
+        end
+        
+        def on_aref(*args)
+          ll, lc = *@map[:aref].pop
+          sr = args.first.source_range.first..lc
+          lr = args.first.line_range.first..ll
+          AstNode.new(:aref, args, char: sr, line: lr)
+        end
+        
+        def on_rbracket(tok)
+          (@map[:aref] ||= []) << [lineno, charno]
+          visit_ns_token(:rbracket, tok, false)
+        end
+        
+        [:if_mod, :unless_mod, :while_mod].each do |kw|
+          node_class = AstNode.node_class_for(kw)
+          module_eval(<<-eof, __FILE__, __LINE__ + 1)
+            def on_#{kw}(*args)
+              sr = args.last.source_range.first..args.first.source_range.last
+              lr = args.last.line_range.first..args.first.line_range.last
+              #{node_class}.new(:#{kw}, args, line: lr, char: sr)
+            end
+          eof
         end
         
         def on_qwords_new
@@ -283,12 +308,13 @@ module YARD
           comment = comment.gsub(/^\#{1,2}\s{0,1}/, '').chomp
           append_comment = @comments[lineno - 1]
           
-          if append_comment
+          if append_comment && @comments_last_column == column
             @comments.delete(lineno - 1)
             comment = append_comment + "\n" + comment
           end
           
           @comments[lineno] = comment
+          @comments_last_column = column
         end
         
         def on_parse_error(msg)

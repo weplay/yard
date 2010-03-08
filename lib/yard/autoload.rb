@@ -1,12 +1,19 @@
+# @private
 def __p(*path) File.join(YARD::ROOT, 'yard', *path) end
 
 module YARD
-  module CLI
+  module CLI # Namespace for command-line interface components
+    autoload :Base,       __p('cli/base')
     autoload :YardGraph,  __p('cli/yard_graph')
     autoload :Yardoc,     __p('cli/yardoc')
+    autoload :YRI,        __p('cli/yri')
   end
   
-  module CodeObjects
+  # A "code object" is defined as any entity in the Ruby language.
+  # Classes, modules, methods, class variables and constants are the
+  # major objects, but DSL languages can create their own by inheriting
+  # from {CodeObjects::Base}.
+  module CodeObjects 
     autoload :Base,                 __p('code_objects/base')
     autoload :CodeObjectList,       __p('code_objects/base')
     autoload :ClassObject,          __p('code_objects/class_object')
@@ -35,48 +42,13 @@ module YARD
     autoload :CSEP,                 __p('code_objects/base')
     autoload :CSEPQ,                __p('code_objects/base')
   end
-  
-  module Generators
-    module Helpers
-      autoload :BaseHelper,                 __p('generators/helpers/base_helper')
-      autoload :FilterHelper,               __p('generators/helpers/filter_helper')
-      autoload :HtmlHelper,                 __p('generators/helpers/html_helper')
-      autoload :HtmlSyntaxHighlightHelper,  __p('generators/helpers/html_syntax_highlight_helper')
-      autoload :MarkupHelper,               __p('generators/helpers/markup_helper')
-      autoload :MethodHelper,               __p('generators/helpers/method_helper')
-      autoload :UMLHelper,                  __p('generators/helpers/uml_helper')
-    end
-    
-    autoload :AllocatorGenerator,       __p('generators/allocator_generator')
-    autoload :AttributesGenerator,      __p('generators/attributes_generator')
-    autoload :Base,                     __p('generators/base')
-    autoload :ClassGenerator,           __p('generators/class_generator')
-    autoload :ConstantsGenerator,       __p('generators/constants_generator')
-    autoload :ConstructorGenerator,     __p('generators/constructor_generator')
-    autoload :DeprecatedGenerator,      __p('generators/deprecated_generator')
-    autoload :DocstringGenerator,       __p('generators/docstring_generator')
-    autoload :FullDocGenerator,         __p('generators/full_doc_generator')
-    autoload :InheritanceGenerator,     __p('generators/inheritance_generator')
-    autoload :MethodGenerator,          __p('generators/method_generator')
-    autoload :MethodDetailsGenerator,   __p('generators/method_details_generator')
-    autoload :MethodListingGenerator,   __p('generators/method_listing_generator')
-    autoload :MethodMissingGenerator,   __p('generators/method_missing_generator')
-    autoload :MethodSignatureGenerator, __p('generators/method_signature_generator')
-    autoload :MethodSummaryGenerator,   __p('generators/method_summary_generator')
-    autoload :MixinsGenerator,          __p('generators/mixins_generator')
-    autoload :ModuleGenerator,          __p('generators/module_generator')
-    autoload :QuickDocGenerator,        __p('generators/quick_doc_generator')
-    autoload :RootGenerator,            __p('generators/root_generator')
-    autoload :SourceGenerator,          __p('generators/source_generator')
-    autoload :TagsGenerator,            __p('generators/tags_generator')
-    autoload :UMLGenerator,             __p('generators/uml_generator')
-    autoload :VisibilityGroupGenerator, __p('generators/visibility_group_generator')
-    autoload :OverloadsGenerator,       __p('generators/overloads_generator')
-  end
-  
+
+  # Handlers are called during the data processing part of YARD's
+  # parsing phase. This allows YARD as well as any custom extension to
+  # analyze source and generate {CodeObjects} to be stored for later use.
   module Handlers
-    module Ruby
-      module Legacy
+    module Ruby # All Ruby handlers
+      module Legacy # Handlers for old Ruby 1.8 parser
         autoload :Base,                 __p('handlers/ruby/legacy/base')
 
         autoload :AliasHandler,         __p('handlers/ruby/legacy/alias_handler')
@@ -115,9 +87,11 @@ module YARD
     autoload :Processor,                __p('handlers/processor')
   end
 
+  # The parser namespace holds all parsing engines used by YARD. 
+  # Currently only Ruby parsers are implemented with support planned for C.
   module Parser
-    module Ruby
-      module Legacy
+    module Ruby # Ruby parsing components.
+      module Legacy # Handles Ruby parsing in Ruby 1.8.
         autoload :RubyToken,      __p('parser/ruby/legacy/ruby_lex')
         autoload :Statement,      __p('parser/ruby/legacy/statement')
         autoload :StatementList,  __p('parser/ruby/legacy/statement_list')
@@ -128,23 +102,25 @@ module YARD
       autoload :RubyParser,        __p('parser/ruby/ruby_parser')
     end
 
+    autoload :CParser,             __p('parser/c_parser')
     autoload :ParserSyntaxError,   __p('parser/source_parser')
     autoload :SourceParser,        __p('parser/source_parser')
     autoload :UndocumentableError, __p('parser/source_parser')
   end
   
-  module Rake
+  module Rake # Holds Rake tasks used by YARD
     autoload :YardocTask, __p('rake/yardoc_task')
   end
   
-  module Serializers
+  module Serializers # Namespace for components that serialize to various endpoints
     autoload :Base,                 __p('serializers/base')
     autoload :FileSystemSerializer, __p('serializers/file_system_serializer')
     autoload :ProcessSerializer,    __p('serializers/process_serializer')
     autoload :StdoutSerializer,     __p('serializers/stdout_serializer')
+    autoload :YardocSerializer,     __p('serializers/yardoc_serializer')
   end
   
-  module Tags
+  module Tags # Namespace for Tag components
     autoload :DefaultFactory, __p('tags/default_factory')
     autoload :DefaultTag,     __p('tags/default_tag')
     autoload :Library,        __p('tags/library')
@@ -155,10 +131,29 @@ module YARD
     autoload :Tag,            __p('tags/tag')
     autoload :TagFormatError, __p('tags/tag_format_error')
   end
+  
+  module Templates # Namespace for templating system
+    module Helpers # Namespace for template helpers
+      autoload :BaseHelper,                 __p('templates/helpers/base_helper')
+      autoload :FilterHelper,               __p('templates/helpers/filter_helper')
+      autoload :HtmlHelper,                 __p('templates/helpers/html_helper')
+      autoload :HtmlSyntaxHighlightHelper,  __p('templates/helpers/html_syntax_highlight_helper' + (RUBY18 ? '18' : ''))
+      autoload :MarkupHelper,               __p('templates/helpers/markup_helper')
+      autoload :MethodHelper,               __p('templates/helpers/method_helper')
+      autoload :ModuleHelper,               __p('templates/helpers/module_helper')
+      autoload :TextHelper,                 __p('templates/helpers/text_helper')
+      autoload :UMLHelper,                  __p('templates/helpers/uml_helper')
+    end
 
-  autoload :Docstring, __p('docstring')
-  autoload :Logger,    __p('logging')
-  autoload :Registry,  __p('registry')
+    autoload :Engine,   __p('templates/engine')
+    autoload :Template, __p('templates/template')
+  end
+
+  autoload :Docstring,      __p('docstring')
+  autoload :Logger,         __p('logging')
+  autoload :Registry,       __p('registry')
+  autoload :RegistryStore,  __p('registry_store')
+  autoload :Verifier,       __p('verifier')
 end
 
 undef __p

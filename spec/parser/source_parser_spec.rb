@@ -7,7 +7,7 @@ describe YARD::Parser::SourceParser do
   
   describe '#parse_string' do
     it "should parse basic Ruby code" do
-      Parser::SourceParser.parse_string(<<-eof)
+      YARD.parse_string(<<-eof)
         module Hello
           class Hi
             # Docstring
@@ -21,6 +21,42 @@ describe YARD::Parser::SourceParser do
       Registry.at("Hello::Hi#me").docstring.should == "Docstring\nDocstring2"
       Registry.at("Hello::Hi#me").docstring.line_range.should == (3..4)
     end
+    
+    it "should only use prepended comments for an object" do
+      YARD.parse_string(<<-eof)
+        # Test
+        
+        # PASS
+        module Hello
+        end # FAIL
+      eof
+      Registry.at(:Hello).docstring.should == "PASS"
+    end
+    
+    it "should not add comments appended to last line of block" do
+      YARD.parse_string <<-eof
+        module Hello2
+        end # FAIL
+      eof
+      Registry.at(:Hello2).docstring.should be_blank
+    end
+    
+    it "should add comments appended to an object's first line" do
+      YARD.parse_string <<-eof
+        module Hello # PASS
+          HELLO
+        end
+
+        module Hello2 # PASS
+          # ANOTHER PASS
+          def x; end
+        end
+      eof
+
+      Registry.at(:Hello).docstring.should == "PASS"
+      Registry.at(:Hello2).docstring.should == "PASS"
+      Registry.at('Hello2#x').docstring.should == "ANOTHER PASS"
+    end
   end
 
   describe '#parse' do
@@ -32,29 +68,61 @@ describe YARD::Parser::SourceParser do
     end
   
     it "should parse a set of file globs" do
-      Dir.should_receive(:[]).with('lib/**/*.rb')
+      Dir.should_receive(:[]).with('lib/**/*.rb').and_return([])
       YARD.parse('lib/**/*.rb')
     end
   
     it "should parse a set of absolute paths" do
-      Dir.should_not_receive(:[])
-      IO.should_receive(:read).with('/path/to/file').and_return("")
+      Dir.should_not_receive(:[]).and_return([])
+      File.should_receive(:file?).with('/path/to/file').and_return(true)
+      File.should_receive(:read_binary).with('/path/to/file').and_return("")
       YARD.parse('/path/to/file')
     end
 
     it "should parse files with '*' in them as globs and others as absolute paths" do
       Dir.should_receive(:[]).with('*.rb').and_return(['a.rb', 'b.rb'])
-      IO.should_receive(:read).with('/path/to/file').and_return("")
-      IO.should_receive(:read).with('a.rb').and_return("")
-      IO.should_receive(:read).with('b.rb').and_return("")
+      File.should_receive(:file?).with('/path/to/file').and_return(true)
+      File.should_receive(:file?).with('a.rb').and_return(true)
+      File.should_receive(:file?).with('b.rb').and_return(true)
+      File.should_receive(:read_binary).with('/path/to/file').and_return("")
+      File.should_receive(:read_binary).with('a.rb').and_return("")
+      File.should_receive(:read_binary).with('b.rb').and_return("")
       YARD.parse ['/path/to/file', '*.rb']
+    end
+    
+    it "should convert directories into globs" do
+      Dir.should_receive(:[]).with('foo/**/*.{rb,c}').and_return(['foo/a.rb', 'foo/bar/b.rb'])
+      File.should_receive(:directory?).with('foo').and_return(true)
+      File.should_receive(:file?).with('foo/a.rb').and_return(true)
+      File.should_receive(:file?).with('foo/bar/b.rb').and_return(true)
+      File.should_receive(:read_binary).with('foo/a.rb').and_return("")
+      File.should_receive(:read_binary).with('foo/bar/b.rb').and_return("")
+      YARD.parse ['foo']
+    end
+    
+    it "should use Registry.checksums cache if file is cached" do
+      data = 'DATA'
+      hash = Registry.checksum_for(data)
+      cmock = mock(:cmock)
+      cmock.should_receive(:[]).with('foo/bar').and_return(hash)
+      Registry.should_receive(:checksums).and_return(cmock)
+      File.should_receive(:file?).with('foo/bar').and_return(true)
+      File.should_receive(:read_binary).with('foo/bar').and_return(data)
+      YARD.parse('foo/bar')
+    end
+    
+    it "should support excluded paths" do
+      File.should_receive(:file?).with('foo/bar').and_return(true)
+      File.should_receive(:file?).with('foo/baz').and_return(true)
+      File.should_not_receive(:read_binary)
+      YARD.parse(["foo/bar", "foo/baz"], ["foo", /baz$/])
     end
   end
   
   describe '#parse_in_order' do
     def in_order_parse(*files)
       paths = files.map {|f| File.join(File.dirname(__FILE__), 'examples', f.to_s + '.rb.txt') }
-      YARD::Parser::SourceParser.parse(paths, Logger::DEBUG)
+      YARD::Parser::SourceParser.parse(paths, [], Logger::DEBUG)
     end
     
     it "should attempt to parse files in order" do
@@ -65,16 +133,18 @@ describe YARD::Parser::SourceParser do
       msgs[2].should =~ /Missing object MyModule/
       msgs[3].should =~ /Processing .+parse_in_order_002.+/
       msgs[4].should =~ /Re-processing .+parse_in_order_001.+/
-      msgs[5].should =~ /Object MyModule successfully resolved/
+    end
+    
+    it "should attempt to order files by length (process toplevel files first)" do
+      %w(a a/b a/b/c).each do |file|
+        File.should_receive(:file?).with(file).and_return(true)
+        File.should_receive(:read_binary).with(file).ordered.and_return('')
+      end
+      YARD.parse %w(a/b/c a/b a)
     end
   end
   
   describe '#parse_statements' do
-    it "should display a warning for C/C++ files" do
-      log.should_receive(:warn).with(/no support/)
-      YARD::Parser::SourceParser.parse_string("int main() { }", :c)
-    end
-    
     it "should display a warning for invalid parser type" do
       log.should_receive(:warn).with(/unrecognized file/)
       YARD::Parser::SourceParser.parse_string("int main() { }", :d)

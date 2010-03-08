@@ -1,19 +1,39 @@
 module YARD
-  VERSION = "0.2.3.5"
+  VERSION = "0.5.3"
   ROOT = File.dirname(__FILE__)
   TEMPLATE_ROOT = File.join(File.dirname(__FILE__), '..', 'templates')
+  CONFIG_DIR = File.expand_path('~/.yard')
   
+  # An alias to {Parser::SourceParser}'s parsing method
+  # 
+  # @example Parse a glob of files
+  #   YARD.parse('lib/**/*.rb')
+  # @see Parser::SourceParser.parse
   def self.parse(*args) Parser::SourceParser.parse(*args) end
+
+  # An alias to {Parser::SourceParser}'s parsing method
+  # 
+  # @example Parse a string of input
+  #   YARD.parse_string('class Foo; end')
+  # @see Parser::SourceParser.parse_string
   def self.parse_string(*args) Parser::SourceParser.parse_string(*args) end
   
-  # Loads gems that match the name 'yard-*' (recommended) or 'yard_*'.
-  # This is called immediately after YARD is loaded to allow plugin support.
+  # Loads gems that match the name 'yard-*' (recommended) or 'yard_*' except
+  # those listed in +~/.yard/ignored_plugins+. This is called immediately 
+  # after YARD is loaded to allow plugin support.
   # 
   # @return [true] always returns true
   def self.load_plugins
-    Gem.source_index.all_gems.values.each do |gem|
+    ignored_plugins_file = File.join(CONFIG_DIR, "ignored_plugins")
+    if File.file?(ignored_plugins_file)
+      ignored_plugins = IO.read(ignored_plugins_file).split(/\s+/)
+    else
+      ignored_plugins = []
+    end
+    
+    Gem.source_index.find_name('').each do |gem|
       begin
-        if gem.name =~ /^yard[-_]/
+        if gem.name =~ /^yard[-_](?!doc-)/ && !ignored_plugins.include?(gem.name)
           log.debug "Loading plugin '#{gem.name}'..."
           require gem.name 
         end

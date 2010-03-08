@@ -1,4 +1,4 @@
-<div class="section module <%= object.path.gsub(/::|\.|#/, '_') %>">
-  <h1 class="title">Module: <%= h object.path %></h1>
-  <%= yield object %>
-</div>
+<h1><%= format_object_title(object) %> 
+  <% if object.has_tag?(:abstract) %><span class="abstract note title">Abstract</span><% end %>
+  <% if object.has_tag?(:deprecated) %><span class="deprecated note title">Deprecated</span><% end %>
+</h1>

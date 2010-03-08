@@ -54,19 +54,65 @@ describe "YARD::Handlers::Ruby::#{RUBY18 ? "Legacy::" : ""}MethodHandler" do
     meth = P('Foo#foo')
 
     o1 = meth.tags(:overload).first
-    o1.name.should == :foo
+    o1.name.should == :bar
     o1.parameters.should == [[:a, nil], [:b, "1"]]
     o1.tag(:return).type.should == "String"
 
     o2 = meth.tags(:overload)[1]
-    o2.name.should == :foo
+    o2.name.should == :baz
     o2.parameters.should == [[:b, nil], [:c, nil]]
     o2.tag(:return).type.should == "Fixnum"
 
     o3 = meth.tags(:overload)[2]
-    o3.name.should == :foo
+    o3.name.should == :bang
     o3.parameters.should == [[:d, nil], [:e, nil]]
     o3.docstring.should be_empty
     o3.docstring.should be_blank
+  end
+  
+  it "should set a return tag if not set on #initialize" do
+    meth = P('Foo#initialize')
+    
+    meth.should have_tag(:return)
+    meth.tag(:return).types.should == ["Foo"]
+    meth.tag(:return).text.should == "a new instance of Foo"
+  end
+  
+  %w(inherited included method_added method_removed method_undefined).each do |meth|
+    it "should set @private tag on #{meth} callback method if no docstring is set" do
+      P('Foo.' + meth).should have_tag(:private)
+    end
+  end
+  
+  it "should not set @private tag on extended callback method since docstring is set" do
+    P('Foo.extended').should_not have_tag(:private)
+  end
+  
+  it "should add @return [Boolean] tag to methods ending in ? without return types" do
+    meth = P('Foo#boolean?')
+    meth.should have_tag(:return)
+    meth.tag(:return).types.should == ['Boolean']
+  end
+  
+  it "should add Boolean type to return tag without types" do
+    meth = P('Foo#boolean2?')
+    meth.should have_tag(:return)
+    meth.tag(:return).types.should == ['Boolean']
+  end
+  
+  it "should not change return type for method ending in ? with return types set" do
+    meth = P('Foo#boolean3?')
+    meth.should have_tag(:return)
+    meth.tag(:return).types.should == ['NotBoolean', 'nil']
+  end
+  
+  it "should add method writer to existing attribute" do
+    Registry.at('Foo#attr_name').should be_reader
+    Registry.at('Foo#attr_name=').should be_writer
+  end
+  
+  it "should add method reader to existing attribute" do
+    Registry.at('Foo#attr_name2').should be_reader
+    Registry.at('Foo#attr_name2=').should be_writer
   end
 end

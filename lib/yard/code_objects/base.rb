@@ -1,10 +1,20 @@
 module YARD
   module CodeObjects
+    # A list of code objects. This array acts like a set (no unique items)
+    # but also disallows any {Proxy} objects from being added.
     class CodeObjectList < Array
+      # Creates a new object list associated with a namespace
+      # 
+      # @param [NamespaceObject] owner the namespace the list should be associated with
+      # @return [CodeObjectList]
       def initialize(owner = Registry.root)
         @owner = owner
       end
       
+      # Adds a new value to the list
+      # 
+      # @param [Base] value a code object to add
+      # @return [CodeObjectList] self
       def push(value)
         value = Proxy.new(@owner, value) if value.is_a?(String) || value.is_a?(Symbol)
         if value.is_a?(CodeObjects::Base) || value.is_a?(Proxy)
@@ -17,13 +27,16 @@ module YARD
       alias_method :<<, :push
     end
     
-    NSEPQ = NSEP = '::'
-    ISEPQ = ISEP = '#'
+    
+    NSEP = '::'
+    NSEPQ = NSEP
+    ISEP = '#'
+    ISEPQ = ISEP
     CSEP = '.'
     CSEPQ = Regexp.quote CSEP
     CONSTANTMATCH = /[A-Z]\w*/
     NAMESPACEMATCH = /(?:(?:#{NSEPQ})?#{CONSTANTMATCH})+/
-    METHODNAMEMATCH = /[a-zA-Z_]\w*[!?=]?|[-+~]\@|<<|>>|=~|===?|[<>]=?|\*\*|[-\/+%^&*~`|]|\[\]=?/
+    METHODNAMEMATCH = /[a-zA-Z_]\w*[!?=]?|[-+~]\@|<<|>>|=~|===?|<=>|[<>]=?|\*\*|[-\/+%^&*~`|]|\[\]=?/
     METHODMATCH = /(?:(?:#{NAMESPACEMATCH}|self)\s*(?:#{CSEPQ}|#{NSEPQ})\s*)?#{METHODNAMEMATCH}/
     
     BUILTIN_EXCEPTIONS = ["SecurityError", "Exception", "NoMethodError", "FloatDomainError", 
@@ -42,14 +55,81 @@ module YARD
     
     BUILTIN_EXCEPTIONS_HASH = BUILTIN_EXCEPTIONS.inject({}) {|h,n| h.update(n => true) }
     
+    # +Base+ is the superclass of all code objects recognized by YARD. A code
+    # object is any entity in the Ruby language (class, method, module). A 
+    # DSL might subclass +Base+ to create a new custom object representing
+    # a new entity type. 
+    # 
+    # == Registry Integration
+    # Any created object associated with a namespace is immediately registered 
+    # with the registry. This allows the Registry to act as an identity map
+    # to ensure that no object is represented by more than one Ruby object
+    # in memory. A unique {#path} is essential for this identity map to work
+    # correctly.
+    # 
+    # == Custom Attributes
+    # Code objects allow arbitrary custom attributes to be set using the
+    # {#[]=} assignment method.
+    # 
+    # == Namespaces
+    # There is a special type of object called a "namespace". These are subclasses
+    # of the {NamespaceObject} and represent Ruby entities that can have
+    # objects defined within them. Classically these are modules and classes,
+    # though a DSL might create a custom {NamespaceObject} to describe a 
+    # specific set of objects.
+    # 
+    # @abstract This class should not be used directly. Instead, create a
+    #   subclass that implements {#path}, {#sep} or {#type}.
+    # @see Registry
+    # @see #path
+    # @see #[]=
+    # @see NamespaceObject
     class Base  
-      attr_reader :name, :files
-      attr_accessor :namespace, :source, :signature, :docstring, :dynamic
+      # The files the object was defined in. To add a file, use {#add_file}.
+      # @return [Array<String>] a list of files
+      # @see #add_file
+      attr_reader :files
       
+      # The namespace the object is defined in. If the object is in the
+      # top level namespace, this is {Registry#root}
+      # @return [NamespaceObject] the namespace object
+      attr_accessor :namespace
+      
+      # The source code associated with the object
+      # @return [String, nil] source, if present, or nil
+      attr_accessor :source
+      
+      # Language of the source code associated with the object. Defaults to
+      # +:ruby+.
+      # 
+      # @return [Symbol] the language type
+      attr_accessor :source_type
+      
+      # The one line signature representing an object. For a method, this will
+      # be of the form "def meth(arguments...)". This is usually the first
+      # source line.
+      # 
+      # @return [String] a line of source
+      attr_accessor :signature
+      
+      # The documentation string associated with the object
+      # @return [Docstring] the documentation string
+      attr_accessor :docstring
+      
+      # Marks whether or not the method is conditionally defined at runtime
+      # @return [Boolean] true if the method is conditionally defined at runtime
+      attr_accessor :dynamic
+      
+      # Is the object defined conditionally at runtime?
+      # @see #dynamic
       def dynamic?; @dynamic end
       
       class << self
+        # Allocates a new code object
+        # @return [Base] 
+        # @see #initialize
         def new(namespace, name, *args, &block)
+          raise ArgumentError, "invalid empty object name" if name.to_s.empty?
           if name.to_s[0,2] == NSEP
             name = name.to_s[2..-1]
             namespace = Registry.root
@@ -79,11 +159,29 @@ module YARD
           end
         end
         
+        # Compares the class with subclasses
+        # 
+        # @param [Object] other the other object to compare classes with
+        # @return [Boolean] true if other is a subclass of self
         def ===(other)
-          self >= other.class ? true : false
+          other.is_a?(self)
         end
       end
           
+      # Creates a new code object
+      # 
+      # @example Create a method in the root namespace
+      #   CodeObjects::Base.new(:root, '#method') # => #<yardoc method #method>
+      # @example Create class Z inside namespace X::Y
+      #   CodeObjects::Base.new(P("X::Y"), :Z) # or
+      #   CodeObjects::Base.new(Registry.root, "X::Y")
+      # @param [NamespaceObject] namespace the namespace the object belongs in,
+      #   {Registry#root} or :root should be provided if it is associated with
+      #   the top level namespace.
+      # @param [Symbol, String] name the name (or complex path) of the object. 
+      # @yield [self] a block to perform any extra initialization on the object
+      # @yieldparam [Base] self the newly initialized code object
+      # @return [Base] the newly created object
       def initialize(namespace, name, *args)
         if namespace && namespace != :root && 
             !namespace.is_a?(NamespaceObject) && !namespace.is_a?(Proxy)
@@ -93,16 +191,27 @@ module YARD
         @files = []
         @current_file_has_comments = false
         @name = name.to_sym
+        @source_type = :ruby
         @tags = []
         @docstring = Docstring.new('', self)
         self.namespace = namespace
         yield(self) if block_given?
       end
       
+      # The name of the object
+      # @param [Boolean] prefix whether to show a prefix. Implement
+      #   this in a subclass to define how the prefix is showed.
+      # @return [Symbol] if prefix is false, the symbolized name
+      # @return [String] if prefix is true, prefix + the name as a String. 
+      #   This must be implemented by the subclass.
+      def name(prefix = false)
+        prefix ? @name.to_s : @name
+      end
+      
       # Associates a file with a code object, optionally adding the line where it was defined.
-      # By convention, '<STDIN>' should be used to associate code that comes form standard input.
+      # By convention, '<stdin>' should be used to associate code that comes form standard input.
       # 
-      # @param [String] file the filename ('<STDIN>' for standard input)
+      # @param [String] file the filename ('<stdin>' for standard input)
       # @param [Fixnum, nil] line the line number where the object lies in the file
       # @param [Boolean] has_comments whether or not the definition has comments associated. This
       #   will allow {#file} to return the definition where the comments were made instead
@@ -134,6 +243,10 @@ module YARD
         @files.first ? @files.first[1] : nil
       end
       
+      # Tests if another object is equal to this, including a proxy
+      # @param [Base, Proxy] other if other is a {Proxy}, tests if
+      #   the paths are equal
+      # @return [Boolean] whether or not the objects are considered the same
       def ==(other)
         if other.is_a?(Proxy)
           path == other.path
@@ -142,6 +255,10 @@ module YARD
         end
       end
       
+      # Accesses a custom attribute on the object
+      # @param [#to_s] key the name of the custom attribute
+      # @return [Object, nil] the custom attribute or nil if not found.
+      # @see #[]=
       def [](key)
         if respond_to?(key)
           send(key)
@@ -150,6 +267,11 @@ module YARD
         end
       end
       
+      # Sets a custom attribute on the object
+      # @param [#to_s] key the name of the custom attribute
+      # @param [Object] value the value to associate
+      # @return [void] 
+      # @see #[]
       def []=(key, value)
         if respond_to?("#{key}=")
           send("#{key}=", value)
@@ -158,6 +280,12 @@ module YARD
         end
       end
       
+      # Checks if the method matches the name of an existing custom
+      # attribute.
+      # 
+      # @param [Symbol] meth the name of the method/attribute
+      # @raise [NoMethodError] if no method or custom attribute exists by
+      #   the name +meth+
       def method_missing(meth, *args, &block)
         if meth.to_s =~ /=$/
           self[meth.to_s[0..-2]] = args.first
@@ -168,7 +296,6 @@ module YARD
         end
       end
 
-      ##
       # Attaches source code to a code object with an optional file location
       #
       # @param [#source, String] statement 
@@ -184,7 +311,6 @@ module YARD
         end
       end
 
-      ##
       # Attaches a docstring to a code oject by parsing the comments attached to the statement
       # and filling the {#tags} and {#docstring} methods with the parsed information.
       #
@@ -195,18 +321,25 @@ module YARD
         @docstring = Docstring === comments ? comments : Docstring.new(comments, self)
       end
       
-      ##
-      # Default type is the lowercase class name without the "Object" suffix
-      # 
-      # Override this method to provide a custom object type 
+      # Default type is the lowercase class name without the "Object" suffix.
+      # Override this method to provide a custom object type
       # 
       # @return [Symbol] the type of code object this represents
       def type
         self.class.name.split(/#{NSEPQ}/).last.gsub(/Object$/, '').downcase.to_sym
       end
     
+      # Represents the unique path of the object. The default implementation
+      # joins the path of {#namespace} with {#name} via the value of {#sep}.
+      # Custom code objects should ensure that the path is unique to the code 
+      # object by either overriding {#sep} or this method.
+      # 
+      # @example The path of an instance method
+      #   MethodObject.new(P("A::B"), :c).path # => "A::B#c"
+      # @return [String] the unique path of the object
+      # @see #sep
       def path
-        if parent && parent != Registry.root
+        if parent && !parent.root?
           [parent.path, name.to_s].join(sep)
         else
           name.to_s
@@ -214,10 +347,43 @@ module YARD
       end
       alias_method :to_s, :path
       
+      # @param [Base, String] other another code object (or object path)
+      # @return [String] the shortest relative path from this object to +other+
+      def relative_path(other)
+        other = other.path if other.respond_to?(:path)
+        return other unless namespace
+        other.gsub(/^#{Regexp.quote namespace.path}(::|\.)?/, '')
+      end
+      
+      # Renders the object using the {Templates::Engine templating system}.
+      # 
+      # @example Formats a class in plaintext
+      #   puts P('MyClass').format
+      # @example Formats a method in html with rdoc markup
+      #   puts P('MyClass#meth').format(:format => :html, :markup => :rdoc)
+      # @param [Hash] options a set of options to pass to the template
+      # @option options [Symbol] :format (:text) :html, :text or another output format
+      # @option options [Symbol] :template (:default) a specific template to use
+      # @option options [Symbol] :markup (nil) the markup type (:rdoc, :markdown, :textile)
+      # @option options [Serializers::Base] :serializer (nil) see Serializers
+      # @return [String] the rendered template
+      # @see Templates::Engine#render
+      def format(options = {})
+        options.merge!(:object => self)
+        Templates::Engine.render(options)
+      end
+      
+      # Inspects the object, returning the type and path
+      # @return [String] a string describing the object
       def inspect
         "#<yardoc #{type} #{path}>"
       end
     
+      # Sets the namespace the object is defined in.
+      # 
+      # @param [NamespaceObject, :root, nil] obj the new namespace (:root 
+      #   for {Registry#root}). If obj is nil, the object is unregistered
+      #   from the Registry.
       def namespace=(obj)
         if @namespace
           @namespace.children.delete(self) 
@@ -235,18 +401,40 @@ module YARD
       alias_method :parent, :namespace
       alias_method :parent=, :namespace=
 
+      # Gets a tag from the {#docstring}
+      # @see Docstring#tag
       def tag(name); @docstring.tag(name) end
+      
+      # Gets a list of tags from the {#docstring}
+      # @see Docstring#tags
       def tags(name = nil); @docstring.tags(name) end
+      
+      # Tests if the {#docstring} has a tag
+      # @see Docstring#has_tag?
       def has_tag?(name); @docstring.has_tag?(name) end
+      
+      # @return whether or not this object is a RootObject
+      def root?; false end
 
       protected
     
+      # Override this method with a custom component separator. For instance,
+      # {MethodObject} implements sep as '#' or '.' (depending on if the
+      # method is instance or class respectively). {#path} depends on this
+      # value to generate the full path in the form: namespace.path + sep + name
+      # 
+      # @return [String] the component that separates the namespace path
+      #   and the name (default is {NSEP})
       def sep; NSEP end
 
       # Formats source code by removing leading indentation
+      # 
+      # @param [String] source the source code to format
+      # @return [String] formatted source
       def format_source(source)
         source.chomp!
-        indent = source.split(/\r?\n/).last[/^([ \t]*)/, 1].length
+        last = source.split(/\r?\n/).last
+        indent = last ? last[/^([ \t]*)/, 1].length : 0
         source.gsub(/^[ \t]{#{indent}}/, '')
       end
     end

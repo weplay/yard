@@ -23,6 +23,29 @@ class YARD::Handlers::Ruby::MethodHandler < YARD::Handlers::Ruby::Base
       o.explicit = true
       o.parameters = args
     end
+    if mscope == :instance && meth == "initialize"
+      unless obj.has_tag?(:return)
+        obj.docstring.add_tag(YARD::Tags::Tag.new(:return, 
+          "a new instance of #{namespace.name}", namespace.name.to_s))
+      end
+    elsif mscope == :class && obj.docstring.blank? && %w(inherited included 
+        extended method_added method_removed method_undefined).include?(meth)
+      obj.docstring.add_tag(YARD::Tags::Tag.new(:private, nil))
+    elsif meth.to_s =~ /\?$/
+      if obj.tag(:return) && (obj.tag(:return).types || []).empty?
+        obj.tag(:return).types = ['Boolean']
+      elsif obj.tag(:return).nil?
+        obj.docstring.add_tag(YARD::Tags::Tag.new(:return, "", "Boolean"))
+      end
+    end
+    
+    if info = obj.attr_info
+      if meth.to_s =~ /=$/ # writer
+        info[:write] = obj if info[:read]
+      else
+        info[:read] = obj if info[:write]
+      end
+    end
     
     parse_block(blk, :owner => obj) # mainly for yield/exceptions
   end

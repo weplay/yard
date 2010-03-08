@@ -2,6 +2,11 @@ require File.dirname(__FILE__) + '/spec_helper'
 
 describe YARD::CodeObjects::Base do
   before { Registry.clear }
+
+  # Fix this
+  # it "should not allow empty object name" do
+  #   lambda { Base.new(:root, '') }.should raise_error(ArgumentError)
+  # end
   
   it "should return a unique instance of any registered object" do
     obj = ClassObject.new(:root, :Me)
@@ -183,7 +188,7 @@ describe YARD::CodeObjects::Base do
 
   it "should maintain all file associations when objects are defined multiple times in multiple files" do
     3.times do |i|
-      IO.stub!(:read).and_return("class X; end")
+      File.stub!(:read_binary).and_return("class X; end")
       Parser::SourceParser.new.parse("file#{i+1}.rb")
     end
     
@@ -203,5 +208,48 @@ describe YARD::CodeObjects::Base do
     Registry.at(:X).file.should == '(stdin)'
     Registry.at(:X).line.should == 4
     Registry.at(:X).files.should == [['(stdin)', 4], ['(stdin)', 1], ['(stdin)', 2]]
+  end
+  
+  describe '#format' do
+    it "should send to Templates.render" do
+      object = MethodObject.new(:root, :method)
+      Templates::Engine.should_receive(:render).with(:x => 1, :object => object)
+      object.format :x => 1
+    end
+  end
+  
+  describe '#source_type' do
+    it "should default source_type to :ruby" do
+      object = MethodObject.new(:root, :method)
+      object.source_type.should == :ruby
+    end
+  end
+  
+  describe '#relative_path' do
+    it "should accept a string" do
+      YARD.parse_string "module A; class B; end; class C; end; end"
+      Registry.at('A::B').relative_path(Registry.at('A::C')).should == 
+        Registry.at('A::B').relative_path('A::C')
+    end
+    
+    it "should return the relative path when they share a common namespace" do
+      YARD.parse_string "module A; class B; end; class C; end; end"
+      Registry.at('A::B').relative_path(Registry.at('A::C')).should == 'C'
+    end
+    
+    it "should return the full path if they don't have a common namespace" do
+      YARD.parse_string "module A; class B; end; end; module D; class C; end; end"
+      Registry.at('A::B').relative_path('D::C').should == 'D::C'
+    end
+    
+    it "should return a relative path for class methods" do
+      YARD.parse_string "module A; def self.b; end; def self.c; end; end"
+      Registry.at('A.b').relative_path('A.c').should == 'c'
+    end
+
+    it "should return a relative path for instance methods" do
+      YARD.parse_string "module A; def b; end; def c; end; end"
+      Registry.at('A#b').relative_path('A#c').should == '#c'
+    end
   end
 end
