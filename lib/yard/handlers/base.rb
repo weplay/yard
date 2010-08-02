@@ -319,8 +319,8 @@ module YARD
           end
         end
         
-        if RUBY_PLATFORM =~ /java/ 
-          log.warn "JRuby does not implement Kernel#callcc and cannot load files in order. You must specify the correct order manually."
+        if !defined?(callcc)
+          log.warn "This ruby implementation does not implement Kernel#callcc and cannot load files in order. You must specify the correct order manually."
           raise NamespaceMissingError, object
         end
         
