@@ -1,8 +1,18 @@
+# Matches if/unless conditions inside classes and attempts to process only
+# one branch (by evaluating the condition if possible).
+# 
+# @example A simple class conditional
+#   class Foo
+#     if 0
+#       # This method is ignored
+#       def xyz; end
+#     end
+#   end
 class YARD::Handlers::Ruby::ClassConditionHandler < YARD::Handlers::Ruby::Base
   namespace_only
   handles meta_type(:condition)
   
-  def process
+  process do
     condition = parse_condition
     if condition == nil
       # Parse both blocks if we're unsure of the condition
@@ -43,7 +53,11 @@ class YARD::Handlers::Ruby::ClassConditionHandler < YARD::Handlers::Ruby::Base
       # *too* dangerous here since code is not actually executed.
       name = statement.condition[0].source
       obj = YARD::Registry.resolve(namespace, name, true)
-      condition = true if obj || Object.instance_eval("defined? #{name}")
+      begin
+        condition = true if obj || Object.instance_eval("defined? #{name}")
+      rescue SyntaxError, NameError
+        condition = false
+      end
     when :var_ref
       var = statement.condition[0]
       if var == s(:kw, "true")

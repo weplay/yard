@@ -4,7 +4,7 @@
 
 module YARD
   module Parser
-    class CParser
+    class CParser < Base
       def initialize(source, file = '(stdin)')
         @file = file
         @namespaces = {}
@@ -18,8 +18,14 @@ module YARD
         parse_includes
       end
       
+      # @since 0.5.6
+      def tokenize
+        raise NotImplementedError, "no tokenization support for C/C++ files"
+      end
+      
       private
       
+      # @since 0.5.3
       def remove_var_prefix(var)
         var.gsub(/^rb_[mc]|^[a-z_]+/, '')
       end
@@ -195,9 +201,12 @@ module YARD
           comments.shift
         end
         overloads = []
+        seen_data = false
         while comments.first =~ /^\s+(\S.+)/ || comments.first =~ /^\s*$/
           line = comments.shift.strip
+          break if line.empty? && seen_data
           next if line.empty?
+          seen_data = true
           line.sub!(/^\w+[\.#]/, '')
           signature, types = *line.split(/ [-=]> /)
           types = parse_types(object, types)
@@ -217,7 +226,7 @@ module YARD
           when /^\w+\s+(#{CodeObjects::METHODMATCH})\s+(\w+)/
             signature = "#{$1}(#{$2})"
           end
-          next unless signature =~ /^#{CodeObjects::METHODNAMEMATCH}/
+          break unless signature =~ /^#{CodeObjects::METHODNAMEMATCH}/
           signature = signature.rstrip
           overloads << "@overload #{signature}"
           overloads << "  @yield [#{blkparams}]" if blk

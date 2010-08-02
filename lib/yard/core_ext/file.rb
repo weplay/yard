@@ -4,6 +4,8 @@ class File
   RELATIVE_PARENTDIR = '..'
   RELATIVE_SAMEDIR = '.'
   
+  # @group Manipulating Paths
+  
   # Turns a path +to+ into a relative path from starting
   # point +from+. The argument +from+ is assumed to be
   # a filename. To treat it as a directory, make sure it
@@ -34,7 +36,7 @@ class File
     path = path.split(SEPARATOR)
     path = path.inject([]) do |acc, comp|
       next acc if comp == RELATIVE_SAMEDIR
-      if comp == RELATIVE_PARENTDIR && acc.size > 0
+      if comp == RELATIVE_PARENTDIR && acc.size > 0 && acc.last != RELATIVE_PARENTDIR
         acc.pop
         next acc
       end
@@ -43,7 +45,11 @@ class File
     File.join(*path)
   end
   
+  # @group Reading Files
+  
   # Forces opening a file (for writing) by first creating the file's directory
+  # @param [String] file the filename to open
+  # @since 0.5.2
   def self.open!(file, *args, &block)
     dir = dirname(file)
     FileUtils.mkdir_p(dir) unless directory?(dir)
@@ -52,6 +58,7 @@ class File
   
   # Reads a file with binary encoding
   # @return [String] the ascii-8bit encoded data
+  # @since 0.5.3
   def self.read_binary(file)
     File.open(file, 'rb') {|f| f.read }
   end

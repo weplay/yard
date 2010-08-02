@@ -1,6 +1,5 @@
 module YARD
   module Tags
-    ##
     # Holds all the registered meta tags. If you want to extend YARD and add
     # a new meta tag, you can do it in one of two ways.
     #
@@ -44,7 +43,6 @@ module YARD
     class Library
       class << self
         attr_reader :labels
-        attr_accessor :default_factory
         
         def instance
           @instance ||= new
@@ -70,8 +68,40 @@ module YARD
         def default_factory=(factory)
           @default_factory = factory.is_a?(Class) ? factory.new : factory
         end
+        
+        # Returns the factory method used to parse the tag text for a specific tag
+        # 
+        # @param [Symbol] tag the tag name
+        # @return [Symbol] the factory method name for the tag
+        # @return [Class<Tag>] the Tag class to use to parse the tag
+        # @return [nil] if the tag is freeform text
+        # @since 0.6.0
+        def factory_method_for(tag)
+          @factory_methods[tag]
+        end
+        
+        # Sets the list of tags to display when rendering templates. The order of 
+        # tags in the list is also significant, as it represents the order that 
+        # tags are displayed in templates.
+        # 
+        # You can use the {Array#place} to insert new tags to be displayed in 
+        # the templates at specific positions:
+        # 
+        #   Library.visible_tags.place(:mytag).before(:return)
+        # 
+        # @return [Array<Symbol>] a list of ordered tags
+        # @since 0.6.0
+        attr_accessor :visible_tags
+        
+        # Sets the list of tags that should apply to any children inside the
+        # namespace they are defined in. For instance, a "@since" tag should
+        # apply to all methods inside a module is it defined in. Transitive
+        # tags can be overridden by directly defining a tag on the child object.
+        # 
+        # @return [Array<Symbol>] a list of transitive tags
+        # @since 0.6.0
+        attr_accessor :transitive_tags
       
-        ## 
         # Sorts the labels lexically by their label name, often used when displaying
         # the tags.
         # 
@@ -80,42 +110,43 @@ module YARD
           labels.sort_by {|a| a.last.downcase }
         end
       
-        ##
         # Convenience method to define a new tag using one of {Tag}'s factory methods, or the
         # regular {DefaultFactory#parse_tag} factory method if none is supplied.
         #
         # @param [#to_s] tag the tag name to create
         # @param [#to_s, Class<Tag>] meth the {Tag} factory method to call when 
         #   creating the tag or the name of the class to directly create a tag for
-        def define_tag(label, tag, meth = "")
+        def define_tag(label, tag, meth = nil)
           if meth.is_a?(Class) && Tag > meth
             class_eval <<-eof, __FILE__, __LINE__
-              def #{tag}_tag(text, raw_text) 
-                #{meth}.new(#{tag.inspect}, text, raw_text) 
+              def #{tag}_tag(text) 
+                #{meth}.new(#{tag.inspect}, text) 
               end
             eof
           else
             class_eval <<-eof, __FILE__, __LINE__
-              def #{tag}_tag(text, raw_text)
-                send_to_factory(#{tag.inspect}, #{meth.inspect}, text, raw_text)
+              def #{tag}_tag(text)
+                send_to_factory(#{tag.inspect}, #{meth.inspect}, text)
               end
             eof
           end
 
           @labels ||= SymbolHash.new(false)
           @labels.update(tag => label)
+          @factory_methods ||= SymbolHash.new(false)
+          @factory_methods.update(tag => meth)
           tag
         end
       end
       
       private
       
-      def send_to_factory(tag_name, meth, text, raw_text)
+      def send_to_factory(tag_name, meth, text)
         meth = meth.to_s
         send_name = "parse_tag" + (meth.empty? ? "" : "_" + meth)
         if @factory.respond_to?(send_name)
           arity = @factory.method(send_name).arity
-          @factory.send send_name, tag_name, text, *(arity == 3 ? [raw_text] : [])
+          @factory.send(send_name, tag_name, text)
         else
           raise NoMethodError, "Factory #{@factory.class_name} does not implement factory method :#{meth}."
         end
@@ -130,26 +161,36 @@ module YARD
         self.factory = factory
       end
       
-      define_tag "Parameters",        :param,       :with_types_and_name
-      define_tag "Yield Parameters",  :yieldparam,  :with_types_and_name
-      define_tag "Yield Returns",     :yieldreturn, :with_types
-      define_tag "Yields",            :yield,       :with_types
-      define_tag "Default Value",     :default,     :with_name
-      define_tag "Returns",           :return,      :with_types
-      define_tag "Deprecated",        :deprecated
-      define_tag "Author",            :author
-      define_tag "Raises",            :raise,       :with_types
-      define_tag "See Also",          :see,         :with_name
-      define_tag "Since",             :since
-      define_tag "Version",           :version
+      define_tag "Abstract",          :abstract
       define_tag "API Visibility",    :api
+      define_tag "Attribute",         :attr,         :with_types_and_name
+      define_tag "Attribute Getter",  :attr_reader,  :with_types_and_name
+      define_tag "Attribute Setter",  :attr_writer,  :with_types_and_name
+      define_tag "Author",            :author
+      define_tag "Deprecated",        :deprecated
+      define_tag "Example",           :example,     :with_title_and_text
+      define_tag "End Grouping",      :endgroup
+      define_tag "Grouping",          :group
       define_tag "Note",              :note
-      define_tag "Todo Item",         :todo
-      define_tag "Example",           :example,     :with_raw_title_and_text
       define_tag "Options Hash",      :option,      :with_options
       define_tag "Overloads",         :overload,    OverloadTag
+      define_tag "Parameters",        :param,       :with_types_and_name
       define_tag "Private",           :private
-      define_tag "Abstract",          :abstract
+      define_tag "Raises",            :raise,       :with_types
+      define_tag "Returns",           :return,      :with_types
+      define_tag "See Also",          :see,         :with_name
+      define_tag "Since",             :since
+      define_tag "Todo Item",         :todo
+      define_tag "Version",           :version
+      define_tag "Yields",            :yield,       :with_types
+      define_tag "Yield Parameters",  :yieldparam,  :with_types_and_name
+      define_tag "Yield Returns",     :yieldreturn, :with_types
+      
+      self.visible_tags = [:abstract, :deprecated, :note, :todo, :example, :overload, 
+        :param, :option, :yield, :yieldparam, :yieldreturn, :return, :raise, 
+        :see, :author, :since, :version]
+      
+      self.transitive_tags = [:since]
     end
   end
 end

@@ -1,8 +1,9 @@
+# Handles any constant assignment
 class YARD::Handlers::Ruby::ConstantHandler < YARD::Handlers::Ruby::Base
   namespace_only
   handles :assign
   
-  def process
+  process do
     if statement[1].call? && statement[1][0][0] == s(:const, "Struct") && 
         statement[1][2] == s(:ident, "new")
       process_structclass(statement)
@@ -39,7 +40,7 @@ class YARD::Handlers::Ruby::ConstantHandler < YARD::Handlers::Ruby::Base
       name = node.jump(:ident).source
       klass.attributes[scope][name] = SymbolHash[:read => nil, :write => nil]
       {read: name, write: "#{name}="}.each do |type, meth|
-        klass.attributes[scope][name][type] = MethodObject.new(klass, meth, scope)
+        klass.attributes[scope][name][type] = register MethodObject.new(klass, meth, scope)
       end
     end
   end

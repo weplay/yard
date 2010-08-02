@@ -1,7 +1,13 @@
 module YARD
-  VERSION = "0.5.3"
-  ROOT = File.dirname(__FILE__)
-  TEMPLATE_ROOT = File.join(File.dirname(__FILE__), '..', 'templates')
+  VERSION = "0.6.0.rc1"
+  
+  # The root path for YARD source libraries
+  ROOT = File.expand_path(File.dirname(__FILE__))
+  
+  # The root path for YARD builtin templates
+  TEMPLATE_ROOT = File.join(ROOT, '..', 'templates')
+  
+  # The location where YARD stores user-specific settings
   CONFIG_DIR = File.expand_path('~/.yard')
   
   # An alias to {Parser::SourceParser}'s parsing method
@@ -49,11 +55,11 @@ end
 $LOAD_PATH.push('.') if RUBY_VERSION >= '1.9.2'
 
 # Keep track of Ruby version for compatibility code
-RUBY19, RUBY18 = *(RUBY_VERSION >= "1.9" ? [true, false] : [false, true])
+RUBY19, RUBY18 = *(RUBY_VERSION >= "1.9.1" ? [true, false] : [false, true])
 
 # Load Ruby core extension classes
-Dir.glob(File.join(YARD::ROOT, 'yard', 'core_ext', '*')).each do |file|
-  require file.gsub(/\.rb$/, '')
+Dir.glob(File.join(YARD::ROOT, 'yard', 'core_ext', '*.rb')).each do |file|
+  require file
 end
 
 ['autoload', 'globals'].each do |file| 

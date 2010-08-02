@@ -4,50 +4,28 @@ describe YARD::Docstring do
   before { YARD::Registry.clear }
   
   describe '#initialize' do
-    it "should parse comments into tags" do
-      doc = Docstring.new(<<-eof)
-        @param name Hello world
-          how are you?
-        @param name2 
-          this is a new line
-        @param name3 and this
-          is a new paragraph:
-
-          right here.
-      eof
-      doc.tags("param").each do |tag|
-        if tag.name == "name"
-          tag.text.should == "Hello world how are you?"
-        elsif tag.name == "name2"
-          tag.text.should == "this is a new line"
-        elsif tag.name == "name3"
-          tag.text.should == "and this is a new paragraph:\n\nright here."
-        end
-      end
-    end
-  
     it "should handle docstrings with empty newlines" do
       Docstring.new("\n\n").should == ""
     end
-
-    it "should only parse tags with charset [A-Za-z_]" do
-      doc = Docstring.new
-      valid = %w( @testing @valid @is_a @is_A @__ )
-      invalid = %w( @ @return@ @param, @x.y @x-y )
-
-      log.enter_level(Logger::FATAL) do
-        {valid => 1, invalid => 0}.each do |tags, size|
-          tags.each do |tag|
-            class << doc
-              def create_tag(tag_name, *args)
-                add_tag Tags::Tag.new(tag_name, *args)
-              end
-            end
-            doc.all = tag
-            doc.tags(tag[1..-1]).size.should == size
-          end
-        end
-      end
+  end
+  
+  describe '#+' do
+    it "should add another Docstring" do
+      d = Docstring.new("FOO") + Docstring.new("BAR")
+      d.should == "FOO\nBAR"
+    end
+    
+    it "should copy over tags" do
+      d1 = Docstring.new("FOO\n@api private\n")
+      d2 = Docstring.new("BAR\n@param foo descr")
+      d = (d1 + d2)
+      d.should have_tag(:api)
+      d.should have_tag(:param)
+    end
+      
+    it "should add a String" do
+      d = Docstring.new("FOO") + "BAR"
+      d.should == "FOOBAR"
     end
   end
   
@@ -159,9 +137,27 @@ describe YARD::Docstring do
       tags = doc.tags('param')
       tags.size.should == 0
     end
+    
+    it "resolves references to methods in the same class with #methname" do
+      klass = CodeObjects::ClassObject.new(:root, "Foo")
+      o = CodeObjects::MethodObject.new(klass, "bar")
+      ref = CodeObjects::MethodObject.new(klass, "baz")
+      o.docstring.add_tag Tags::Tag.new('param', 'testing', nil, 'arg1')
+      ref.docstring = "@param (see #bar)"
+      
+      tags = ref.docstring.tags("param")
+      tags.size.should == 1
+      tags.first.text.should == "testing"
+      tags.first.should be_kind_of(Tags::RefTag)
+      tags.first.owner.should == o
+    end
   end
   
   describe '#empty?/#blank?' do
+    before(:all) do
+      Tags::Library.define_tag "Invisible", :invisible_tag
+    end
+
     it "should be blank and empty if it has no content and no tags" do
       Docstring.new.should be_blank
       Docstring.new.should be_empty
@@ -185,6 +181,125 @@ describe YARD::Docstring do
       d = Docstring.new("@return (see Foo#bar)")
       d.should be_empty
       d.should_not be_blank
+    end
+    
+    it "should be blank if it has no visible tags" do
+      d = Docstring.new("@invisible_tag value")
+      d.should be_blank
+    end
+    
+    it "should not be blank if it has invisible tags and only_visible_tags = false" do
+      d = Docstring.new("@invisible_tag value")
+      d.add_tag Tags::Tag.new('invisible_tag', nil, nil)
+      d.blank?(false).should == false
+    end
+  end
+  
+  describe '#add_tag' do
+    it "should only parse tags with charset [A-Za-z_]" do
+      doc = Docstring.new
+      valid = %w( @testing @valid @is_a @is_A @__ )
+      invalid = %w( @ @return@ @param, @x.y @x-y )
+
+      log.enter_level(Logger::FATAL) do
+        {valid => 1, invalid => 0}.each do |tags, size|
+          tags.each do |tag|
+            class << doc
+              def create_tag(tag_name, *args)
+                add_tag Tags::Tag.new(tag_name, *args)
+              end
+            end
+            doc.all = tag
+            doc.tags(tag[1..-1]).size.should == size
+          end
+        end
+      end
+    end
+  end
+  
+  describe '#parse_comments' do
+    it "should parse comments into tags" do
+      doc = Docstring.new(<<-eof)
+@param name Hello world
+  how are you?
+@param name2 
+  this is a new line
+@param name3 and this
+  is a new paragraph:
+
+  right here.
+      eof
+      tags = doc.tags(:param)
+      tags[0].name.should == "name"
+      tags[0].text.should == "Hello world\nhow are you?"
+      tags[1].name.should == "name2"
+      tags[1].text.should == "this is a new line"
+      tags[2].name.should == "name3"
+      tags[2].text.should == "and this\nis a new paragraph:\n\nright here."
+    end
+
+    it "should end parsing a tag on de-dent" do
+      doc = Docstring.new(<<-eof)
+@note test
+  one two three
+rest of docstring
+      eof
+      doc.tag(:note).text.should == "test\none two three"
+      doc.should == "rest of docstring"
+    end
+    
+    it "should parse examples embedded in doc" do
+      doc = Docstring.new(<<-eof)
+test string here
+@example code
+  
+  def foo(x, y, z)
+  end
+  
+  class A; end
+
+more stuff
+eof
+      doc.should == "test string here\nmore stuff"
+      doc.tag(:example).text.should == "\ndef foo(x, y, z)\nend\n\nclass A; end"
+    end
+    
+    it "should remove only original indentation from beginning of line in tags" do
+      doc = Docstring.new(<<-eof)
+@param name
+  some value
+  foo bar
+   baz
+eof
+      doc.tag(:param).text.should == "some value\nfoo bar\n baz"
+    end
+
+    it "should allow numbers in tags" do
+      Tags::Library.define_tag(nil, :foo1)
+      Tags::Library.define_tag(nil, :foo2)
+      Tags::Library.define_tag(nil, :foo3)
+      doc = Docstring.new(<<-eof)
+@foo1 bar1
+@foo2 bar2
+@foo3 bar3
+eof
+      doc.tag(:foo1).text.should == "bar1"
+      doc.tag(:foo2).text.should == "bar2"
+    end
+    
+    it "should end tag on newline if next line is not indented" do
+      doc = Docstring.new(<<-eof)
+@author bar1
+@api bar2
+Hello world
+eof
+      doc.tag(:author).text.should == "bar1"
+      doc.tag(:api).text.should == "bar2"
+    end
+    
+    it "should warn about unknown tag" do
+      log.should_receive(:warn).with(/Unknown tag @hello$/)
+      Docstring.new("@hello world")
     end
   end
 end

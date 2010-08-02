@@ -3,12 +3,26 @@ require 'ripper'
 module YARD
   module Parser
     module Ruby
-      class RubyParser < Ripper
+      # Ruby 1.9 parser
+      class RubyParser < Parser::Base
+        def initialize(source, filename)
+          @parser = RipperParser.new(source, filename)
+        end
+        
+        def parse; @parser.parse end
+        def tokenize; @parser.tokens end
+        def enumerator; @parser.enumerator end
+      end
+      
+      # Internal parser class
+      # @since 0.5.6
+      class RipperParser < Ripper
         attr_reader :ast, :charno, :comments, :file, :tokens
         alias root ast
 
         def initialize(source, filename, *args)
           super
+          @last_ns_token = nil
           @file = filename
           @source = source
           @tokens = []
@@ -17,6 +31,7 @@ module YARD
           @ns_charno = 0
           @list = []
           @charno = 0
+          @groups = []
         end
 
         def parse
@@ -107,6 +122,7 @@ module YARD
             eof
           elsif /_add(_.+)?\z/ =~ event
             module_eval(<<-eof, __FILE__, __LINE__ + 1)
+              undef on_#{event} if instance_method(:on_#{event})
               def on_#{event}(list, item)
                 list.push(item)
                 list
@@ -114,12 +130,14 @@ module YARD
             eof
           elsif MAPPINGS.has_key?(event)
             module_eval(<<-eof, __FILE__, __LINE__ + 1)
+              undef on_#{event} if instance_method(:on_#{event})
               def on_#{event}(*args)
                 visit_event #{node_class}.new(:#{event}, args)
               end
             eof
           else
             module_eval(<<-eof, __FILE__, __LINE__ + 1)
+              undef on_#{event} if instance_method(:on_#{event})
               def on_#{event}(*args)
                 #{node_class}.new(:#{event}, args, listline: lineno..lineno, listchar: charno...charno)
               end
@@ -130,6 +148,7 @@ module YARD
         SCANNER_EVENTS.each do |event|
           ast_token = AST_TOKENS.include?(event)
           module_eval(<<-eof, __FILE__, __LINE__ + 1)
+            undef on_#{event} if instance_method(:on_#{event})
             def on_#{event}(tok)
               visit_ns_token(:#{event}, tok, #{ast_token.inspect})
             end
@@ -139,6 +158,7 @@ module YARD
         REV_MAPPINGS.select {|k| k.is_a?(Symbol) }.each do |event, value|
           ast_token = AST_TOKENS.include?(event)
           module_eval(<<-eof, __FILE__, __LINE__ + 1)
+            undef on_#{event} if instance_method(:on_#{event})
             def on_#{event}(tok)
               (@map[:#{event}] ||= []) << [lineno, charno]
               visit_ns_token(:#{event}, tok, #{ast_token.inspect})
@@ -148,6 +168,7 @@ module YARD
         
         [:kw, :op].each do |event|
           module_eval(<<-eof, __FILE__, __LINE__ + 1)
+            undef on_#{event} if instance_method(:on_#{event})
             def on_#{event}(tok)
               unless @last_ns_token == [:kw, "def"] ||
                   (@tokens.last && @tokens.last[0] == :symbeg)
@@ -160,6 +181,7 @@ module YARD
 
         [:sp, :nl, :ignored_nl].each do |event|
           module_eval(<<-eof, __FILE__, __LINE__ + 1)
+            undef on_#{event} if instance_method(:on_#{event})
             def on_#{event}(tok)
               add_token(:#{event}, tok)
               @charno += tok.length
@@ -201,6 +223,27 @@ module YARD
           end
         end
 
+        undef on_program
+        undef on_assoc_new
+        undef on_hash
+        undef on_bare_assoc_hash
+        undef on_assoclist_from_args
+        undef on_aref
+        undef on_rbracket
+        undef on_qwords_new
+        undef on_string_literal
+        undef on_lambda
+        undef on_string_content
+        undef on_rescue
+        undef on_void_stmt
+        undef on_params
+        undef on_label
+        undef on_comment
+        undef on_embdoc_beg
+        undef on_embdoc
+        undef on_embdoc_end
+        undef on_parse_error
+
         def on_program(*args)
           args.first
         end
@@ -241,6 +284,7 @@ module YARD
         [:if_mod, :unless_mod, :while_mod].each do |kw|
           node_class = AstNode.node_class_for(kw)
           module_eval(<<-eof, __FILE__, __LINE__ + 1)
+            undef on_#{kw} if instance_method(:on_#{kw})
             def on_#{kw}(*args)
               sr = args.last.source_range.first..args.first.source_range.last
               lr = args.last.line_range.first..args.first.line_range.last
@@ -304,7 +348,15 @@ module YARD
 
         def on_comment(comment)
           visit_ns_token(:comment, comment)
-          
+          case comment
+          when /\A# @group\s+(.+)\s*\Z/
+            @groups.unshift [lineno, $1]
+            return
+          when /\A# @endgroup\s*\Z/
+            @groups.unshift [lineno, nil]
+            return
+          end
+
           comment = comment.gsub(/^\#{1,2}\s{0,1}/, '').chomp
           append_comment = @comments[lineno - 1]
           
@@ -317,6 +369,22 @@ module YARD
           @comments_last_column = column
         end
         
+        def on_embdoc_beg(text)
+          visit_ns_token(:embdoc_beg, text)
+          @embdoc = ""
+        end
+        
+        def on_embdoc(text)
+          visit_ns_token(:embdoc, text)
+          @embdoc << text
+        end
+        
+        def on_embdoc_end(text)
+          visit_ns_token(:embdoc_end, text)
+          @comments[lineno] = @embdoc
+          @embdoc = nil
+        end
+        
         def on_parse_error(msg)
           raise ParserSyntaxError, "syntax error in `#{file}`:(#{lineno},#{column}): #{msg}"
         end
@@ -324,13 +392,20 @@ module YARD
         def insert_comments
           root.traverse do |node|
             next if node.type == :list || node.parent.type != :list
-            node.line.downto(node.line - 2) do |line|
+            (node.line - 2).upto(node.line) do |line|
               comment = @comments[line]
               if comment && !comment.empty?
                 node.docstring = comment
                 node.docstring_range = ((line - comment.count("\n"))..line)
                 comments.delete(line)
                 break
+              end
+            end
+            if node.type == :def || node.type == :defs || node.call?
+              @groups.each do |group|
+                if group.first < node.line
+                  break node.group = group.last
+                end
               end
             end
           end

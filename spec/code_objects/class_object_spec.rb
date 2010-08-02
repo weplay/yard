@@ -6,6 +6,7 @@ describe YARD::CodeObjects::ClassObject do
       Registry.clear
       @mixin = ModuleObject.new(:root, :SomeMixin)
       @mixin2 = ModuleObject.new(:root, :SomeMixin2)
+      @mixin2.instance_mixins << @mixin
       @mixin3 = ModuleObject.new(:root, :SomeMixin3)
       @mixin4 = ModuleObject.new(:root, :SomeMixin4)
       @mixin2.instance_mixins << @mixin3
@@ -23,7 +24,7 @@ describe YARD::CodeObjects::ClassObject do
     end
 
     it "should show proper inheritance tree when mixins are included" do
-      @yard.inheritance_tree(true).should == [@yard, @mixin, @superyard, @mixin2, @mixin3, P(:String)]
+      @yard.inheritance_tree(true).should == [@yard, @mixin, @superyard, @mixin4, @mixin2, @mixin3, P(:String)]
     end
 
     it "should not modify the object's mixin list when mixins are included" do
@@ -34,13 +35,20 @@ describe YARD::CodeObjects::ClassObject do
       @class2.inheritance_tree(true)
       @class2.mixins.should == []
     end
+    
+    it "should list class mixins in inheritance tree" do
+      mod = ModuleObject.new(:root, :ClassMethods)
+      klass = ClassObject.new(:root, :ReceivingClass)
+      klass.class_mixins << mod
+      klass.inheritance_tree(true).should == [klass, mod]
+    end
   end
 
   describe "#meths / #inherited_meths" do
     before(:all) do
       Registry.clear
     
-      Parser::SourceParser.parse_string <<-eof
+      YARD.parse_string <<-eof
         class SuperYard < String
           def foo; end
           def foo2; end
@@ -58,6 +66,14 @@ describe YARD::CodeObjects::ClassObject do
         class YARD < MiddleYard
           def mymethod; end
           def bar; end
+        end
+        
+        module IncludedYard
+          def foo; end
+        end
+        
+        class FinalYard < SuperYard
+          include IncludedYard
         end
       eof
     end
@@ -95,6 +111,12 @@ describe YARD::CodeObjects::ClassObject do
       meths = P(:YARD).inherited_meths
       meths.should include(P('MiddleYard#middle'))
       meths.should_not include(P('SuperYard#middle'))
+    end
+    
+    it "should show mixed in methods before superclass method" do
+      meths = P(:FinalYard).meths
+      meths.should include(P('IncludedYard#foo'))
+      meths.should_not include(P('SuperYard#foo'))
     end
   end
 

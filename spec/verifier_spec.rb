@@ -47,5 +47,35 @@ describe YARD::Verifier do
       obj.should_receive(:tag).and_return(nil)
       Verifier.new('@return.text').call(obj).should == false
     end
+    
+    it "should not fail if no expressions were added" do
+      lambda { Verifier.new.call(nil) }.should_not raise_error
+    end
+  end
+  
+  describe '#expressions' do
+    it "should maintain a list of all unparsed expressions" do
+      Verifier.new('@return.text', '@private').expressions.should == ['@return.text', '@private']
+    end
+  end
+
+  describe '#expressions=' do
+    it "should recompile expressions when attribute is modified" do
+      obj = mock(:object)
+      obj.should_receive(:tag).with('return')
+      v = Verifier.new
+      v.expressions = ['@return']
+      v.call(obj)
+    end
+  end
+  
+  describe '#add_expressions' do
+    it "should add new expressions and recompile" do
+      obj = mock(:object)
+      obj.should_receive(:tag).with('return')
+      v = Verifier.new
+      v.add_expressions '@return'
+      v.call(obj)
+    end
   end
 end

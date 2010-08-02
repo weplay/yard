@@ -1,15 +1,17 @@
-YARD Release 0.5.3 "The Longest" (Jan 11th 2010)
-================================================
+YARD: Yay! A Ruby Documentation Tool
+====================================
 
-**Homepage**:  [http://yardoc.org](http://yardoc.org)   
-**IRC**:       **Join us on IRC in #yard on irc.freenode.net!**   
-**Git**:       [http://github.com/lsegal/yard](http://github.com/lsegal/yard)   
-**Author**:    Loren Segal   
-**Copyright**: 2007-2009    
-**License**:   MIT License
+**Homepage**:     [http://yardoc.org](http://yardoc.org)   
+**IRC**:          [irc://irc.freenode.net/yard](irc.freenode.net / #yard)    
+**Git**:          [http://github.com/lsegal/yard](http://github.com/lsegal/yard)   
+**Author**:       Loren Segal  
+**Contributors**: See Contributors section below    
+**Copyright**:    2007-2010    
+**License**:      MIT License    
+**Latest Version**: 0.5.8 (codename "The Longest")    
+**Release Date**: June 22nd 2010    
 
-
-SYNOPSIS
+Synopsis
 --------
 
 YARD is a documentation generation tool for the Ruby programming language. 
@@ -19,7 +21,7 @@ custom Ruby constructs such as custom class level definitions. Below is a 
 summary of some of YARD's notable features.
 
 
-FEATURE LIST
+Feature List
 ------------
                                                                               
 **1. RDoc/SimpleMarkup Formatting Compatibility**: YARD is made to be compatible 
@@ -35,7 +37,7 @@ important information about objects, such as what parameters they take and what 
 they are expected to be, what type a method should return, what exceptions it can 
 raise, if it is deprecated, etc.. It also allows information to be better (and more 
 consistently) organized during the output generation phase. You can find a list
-of tags in the {file:GettingStarted.md#taglist GettingStarted.md} file.
+of tags in the {file:Tags.md#taglist Tags.md} file.
 
 YARD also supports an optional "types" declarations for certain tags. 
 This allows the developer to document type signatures for ruby methods and 
@@ -44,7 +46,6 @@ describing this data in the body of the description, a developer may formally 
 declare the parameter or return type(s) in a single line. Consider the 
 following Yardoc'd method: 
 
-     ## 
      # Reverses the contents of a String or IO object. 
      # 
      # @param [String, #read] contents the contents to reverse 
@@ -93,9 +94,28 @@ who would like to reap the benefits of YARD's processing in other forms, such 
 as throwing all the documentation into a database. Another useful way of 
 exploiting this raw data format would be to write tools that can auto generate
 test cases, for example, or show possible unhandled exceptions in code. 
+
+
+Installing
+----------
+
+To install YARD, use the following command:
+
+    $ gem install yard
+    
+(Add `sudo` if you're installing under a POSIX system as root)
+    
+Alternatively, if you've checked the source out directly, you can call 
+`rake install` from the root project directory.
+
+**Important Note for Debian/Ubuntu users:** there's a possible chance your Ruby
+install lacks RDoc, which is occasionally used by YARD to convert markup to HTML. 
+If running `which rdoc` turns up empty, install RDoc by issuing:
+
+    $ sudo apt-get install rdoc
                                                                               
 
-USAGE
+Usage
 -----
 
 There are a couple of ways to use YARD. The first is via command-line, and the
@@ -144,7 +164,7 @@ You can also add a `.yardopts` file to your project directory which lists
 the switches separated by whitespace (newlines or space) to pass to yardoc 
 whenever it is run.
 
-<h4>Queries</h4>
+#### Queries
 
 The `yardoc` tool also supports a `--query` argument to only include objects
 that match a certain data or meta-data query. The query syntax is Ruby, though
@@ -200,12 +220,40 @@ separator. Only modules, classes and constants should use "::".
 You can also do lookups on any installed gems. Just make sure to build the
 .yardoc databases for installed gems with:
 
-    $ sudo yardoc --build-gems
+    $ sudo yard gems
     
 If you don't have sudo access, it will write these files to your `~/.yard`
 directory. `yri` will also cache lookups there.
 
-**4. `yard-graph` Graphviz Generator**
+**4. `yard server` Documentation Server**
+
+The `yard server` command serves documentation for a local project or all installed
+RubyGems. To serve documentation for a project you are working on, simply run:
+
+    $ yard server
+    
+And the project inside the current directory will be parsed (if the source has
+not yet been scanned by YARD) and served at [http://localhost:8808](http://localhost:8808).
+
+#### Live Reloading
+
+If you want to serve documentation on a project while you document it so that
+you can preview the results, simply pass `--reload` (`-r`) to the above command
+and YARD will reload any changed files on each request. This will allow you to
+change any documentation in the source and refresh to see the new contents.
+
+#### Serving Gems
+
+To serve documentation for all installed gems, call:
+
+    $ yard server --gems
+    
+This will also automatically build documentation for any gems that have not
+been previously scanned. Note that in this case there will be a slight delay
+between the first request of a newly parsed gem.
+
+
+**5. `yard graph` Graphviz Generator**
 
 You can use `yard-graph` to generate dot graphs of your code. This, of course,
 requires [Graphviz](http://www.graphviz.org) and the `dot` binary. By default
@@ -216,11 +264,31 @@ option to show mixin inclusions. You can output to stdout or a file, or pipe dir
 to `dot`. The same public, protected and private visibility rules apply to yard-graph.
 More options can be seen by typing `yard-graph --help`, but here is an example:
 
-    $ yard-graph --protected --full --dependencies
+    $ yard graph --protected --full --dependencies
 
 
-CHANGELOG
+Changelog
 ---------
+
+- **June.22.10**: 0.5.8 release
+    - Merge fix from 0.6 branch for --no-private visibility checking
+
+- **June.21.10**: 0.5.7 release
+    - Fixed visibility flag parsing in `yardoc`
+    - Updated Parser Architecture documentation with new SourceParser API
+    - Improved Registry documentation for new load commands
+    - Fix loading of .yardoc file as cache (and preserving aliases)
+    - Fix "lib" directory missing when running YARD on installed gems
+
+- **June.12.10**: 0.5.6 release
+    - Bug fixes for RubyGems plugin, `has_rdoc=false` should now work
+    - New API for registering custom parsers. See {file:WhatsNew.md}
+
+- **May.22.10**: 0.5.5 release
+    - Various bug fixes
+
+- **March.22.10**: 0.5.4 release
+    - See {file:docs/WhatsNew.md what's new document} for changes
 
 - **January.11.10**: 0.5.3 release
     - See {file:docs/WhatsNew.md what's new document} for changes
@@ -283,10 +351,32 @@ CHANGELOG
   to get people testing YARD on their code because there are too many possible  
   code styles to fit into a sane amount of test cases. It also demonstrates the 
   power of YARD and what to expect from the syntax (Yardoc style meta tags).    
-                                                          
 
-COPYRIGHT
+
+Contributors
+------------
+
+Special thanks to the following people for submitting patches:
+
+* Aman Gupta
+* Benjamin Bock
+* Denis Defreyne
+* Duane Johnson
+* Elliottcable
+* James Rosen
+* Jeff Rafter
+* Leonid Borisenko
+* Loren Segal
+* Michael Edgar
+* Nathan Weizenbaum
+* Postmodern
+* Yehuda Katz
+
+
+Copyright
 ---------
 
-YARD &copy; 2007-2009 by [Loren Segal](mailto:lsegal@soen.ca). Licensed under the MIT 
-license. Please see the {file:LICENSE} for more information.
+YARD &copy; 2007-2010 by [Loren Segal](mailto:lsegal@soen.ca). YARD is 
+licensed under the MIT license except for some files which come from the
+RDoc/Ruby distributions. Please see the {file:LICENSE} and {file:LEGAL} 
+documents for more information.

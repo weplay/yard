@@ -38,10 +38,14 @@ module YARD
           @imethod = true if name.include? ISEP
           namespace = Proxy.new(namespace, $`) unless $`.empty?
           name = $1
+        else
+          @orignamespace, @origname, @imethod = nil, nil, nil
         end 
         
         @name = name.to_sym
         @namespace = namespace
+        @obj = nil
+        @imethod ||= nil
         
         unless @namespace.is_a?(NamespaceObject) or @namespace.is_a?(Proxy)
           raise ArgumentError, "Invalid namespace object: #{namespace}"
@@ -91,6 +95,7 @@ module YARD
         end
       end
       alias to_s path
+      alias to_str path
     
       # @return [Boolean] 
       def is_a?(klass)
@@ -120,14 +125,18 @@ module YARD
       end
       
       # @return [Boolean] 
-      def ==(other)
+      def equal?(other)
         if other.respond_to? :path
           path == other.path
         else
           false
         end
       end
+      alias == equal?
       
+      # @return [Integer] the object's hash value (for equality checking)
+      def hash; path.hash end
+
       # Returns the class name of the object the proxy is mimicking, if
       # resolved. Otherwise returns +Proxy+. 
       # @return [Class] the resolved object's class or +Proxy+
@@ -175,7 +184,7 @@ module YARD
           super
         end
       end
-
+      
       # Dispatches the method to the resolved object.
       # 
       # @raise [ProxyMethodError] if the proxy cannot find the real object
@@ -185,7 +194,7 @@ module YARD
         else
           log.warn "Load Order / Name Resolution Problem on #{path}:"
           log.warn "-"
-          log.warn "Something is trying to access the object #{path} before it has been recognized."
+          log.warn "Something is trying to call #{meth} on object #{path} before it has been recognized."
           log.warn "This error usually means that you need to modify the order in which you parse files"
           log.warn "so that #{path} is parsed before methods or other objects attempt to access it."
           log.warn "-"
@@ -204,6 +213,9 @@ module YARD
       def root?; false end
     
       private
+
+      # @note this method fixes a bug in 1.9.2: http://gist.github.com/437136
+      def to_ary; nil end
     
       # Attempts to find the object that this unresolved object
       # references by checking if any objects by this name are

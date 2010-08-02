@@ -2,11 +2,14 @@ require 'cgi'
 
 module YARD
   module Templates::Helpers
+    # The helper module for HTML templates.
     module HtmlHelper
       include MarkupHelper
       include HtmlSyntaxHighlightHelper
       
       SimpleMarkupHtml = RDoc::Markup::ToHtml.new rescue SM::ToHtml.new
+    
+      # @group Escaping Template Data
     
       # Escapes HTML entities
       # 
@@ -23,6 +26,8 @@ module YARD
       def urlencode(text)
         CGI.escape(text.to_s)
       end
+      
+      # @group Converting Markup to HTML
 
       # Turns text into HTML using +markup+ style formatting.
       # 
@@ -31,29 +36,13 @@ module YARD
       #   To add a custom markup type, see {MarkupHelper}
       # @return [String] the HTML
       def htmlify(text, markup = options[:markup])
+        markup_meth = "html_markup_#{markup}"
+        return text unless respond_to?(markup_meth)
         return "" unless text
         return text unless markup
         load_markup_provider(markup)
-
-        # TODO: other libraries might be more complex
-        case markup
-        when :markdown
-          html = markup_class(markup).new(text).to_html
-        when :textile
-          doc = markup_class(markup).new(text)
-          doc.hard_breaks = false if doc.respond_to?(:hard_breaks=)
-          html = doc.to_html
-        when :rdoc
-
-          begin
-            SimpleMarkupHtml.instance_variable_set("@from_path", url_for(object))
-            html = MarkupHelper::SimpleMarkup.convert(text, SimpleMarkupHtml)
-          end
-
-          html = fix_dash_dash(html)
-          html = fix_typewriter(html)
-        end
-
+        html = send("html_markup_#{markup}", text)
+        html.force_encoding(Encoding.default_external) if RUBY19
         html = resolve_links(html)
         html = html.gsub(/<pre>(?:\s*<code>)?(.+?)(?:<\/code>\s*)?<\/pre>/m) do
           str = $1
@@ -63,9 +52,58 @@ module YARD
         html
       end
       
+      # Converts Markdown to HTML
+      # @param [String] text input Markdown text
+      # @return [String] output HTML
+      # @since 0.6.0
+      def html_markup_markdown(text)
+        # TODO: other libraries might be more complex
+        markup_class(:markdown).new(text).to_html
+      end
+      
+      # Converts Textile to HTML
+      # @param [String] text the input Textile text
+      # @return [String] output HTML
+      # @since 0.6.0
+      def html_markup_textile(text)
+        doc = markup_class(:textile).new(text)
+        doc.hard_breaks = false if doc.respond_to?(:hard_breaks=)
+        doc.to_html
+      end
+      
+      # Converts RDoc formatting (SimpleMarkup) to HTML
+      # @param [String] text the input RDoc formatted text
+      # @return [String] output HTML
+      # @since 0.6.0
+      def html_markup_rdoc(text)
+        begin
+          SimpleMarkupHtml.instance_variable_set("@from_path", url_for(object))
+          html = MarkupHelper::SimpleMarkup.convert(text, SimpleMarkupHtml)
+        end
+
+        html = fix_dash_dash(html)
+        html = fix_typewriter(html)
+      end
+      
+      # Converts plaintext to HTML
+      # @param [String] text the input text
+      # @return [String] the output HTML
+      # @since 0.6.0
+      def html_markup_text(text)
+        "<pre>" + text + "</pre>"
+      end
+      
+      # Converts HTML to HTML
+      # @param [String] text input html
+      # @return [String] output HTML
+      # @since 0.6.0
+      def html_markup_html(text)
+        text
+      end
+      
       # @return [String] HTMLified text as a single line (paragraphs removed)
       def htmlify_line(*args)
-        htmlify(*args).gsub(/<\/?p>/, '')
+        "<div class='inline'>" + htmlify(*args) + "</div>"
       end
       
       # Fixes RDoc behaviour with ++ only supporting alphanumeric text.
@@ -76,7 +114,7 @@ module YARD
           type_text, pre_text, no_match = $1, $`, $&
           pre_match = pre_text.scan(%r(</?(?:pre|tt|code).*?>))
           if pre_match.last.nil? || pre_match.last.include?('/')
-            '<tt>' + type_text + '</tt>'
+            '<tt>' + h(type_text) + '</tt>'
           else
             no_match
           end
@@ -90,6 +128,38 @@ module YARD
       def fix_dash_dash(text)
         text.gsub(/&#8212;(?=\S)/, '--')
       end
+      
+      # @group Syntax Highlighting Source Code
+      
+      # Syntax highlights +source+ in language +type+.
+      # 
+      # @note To support a specific language +type+, implement the method
+      #   +html_syntax_highlight_TYPE+ in this class.
+      # 
+      # @param [String] source the source code to highlight
+      # @param [Symbol] type the language type (:ruby, :plain, etc). Use
+      #   :plain for no syntax highlighting. 
+      # @return [String] the highlighted source
+      def html_syntax_highlight(source, type = :ruby)
+        return "" unless source
+        return h(source) if options[:no_highlight]
+        
+        # handle !!!LANG prefix to send to html_syntax_highlight_LANG
+        if source =~ /\A(?:[ \t]*\r?\n)?[ \t]*!!!([\w.+-]+)[ \t]*\r?\n/
+          type, source = $1, $'
+          source = $'
+        end
+        
+        meth = "html_syntax_highlight_#{type}"
+        respond_to?(meth) ? send(meth, source) : h(source)
+      end
+      
+      # @return [String] unhighlighted source
+      def html_syntax_highlight_plain(source)
+        h(source)
+      end
+      
+      # @group Linking Objects and URLs
 
       # Resolves any text in the form of +{Name}+ to the object specified by
       # Name. Also supports link titles in the form +{Name title}+.
@@ -103,70 +173,41 @@ module YARD
       def resolve_links(text)
         code_tags = 0
         text.gsub(/<(\/)?(pre|code|tt)|\{(\S+?)(?:\s(.*?\S))?\}(?=[\W<]|.+<\/|$)/) do |str|
-          tag = $2
-          closed = $1
+          closed, tag, name, title = $1, $2, $3, $4
           if tag
             code_tags += (closed ? -1 : 1)
             next str
           end
           next str unless code_tags == 0
           
-          name = $3
-          title = $4 || name
-
-          case name
-          when %r{://}, /^mailto:/
-            link_url(name, title, :target => '_parent')
-          when /^file:(\S+?)(?:#(\S+))?$/
-            link_file($1, title == name ? $1 : title, $2)
+          if object.is_a?(String)
+            object
           else
-            if object.is_a?(String)
-              obj = name
-            else
-              obj = Registry.resolve(object, name, true, true)
-              if obj.is_a?(CodeObjects::Proxy)
-                match = text[/(.{0,20}\{.*?#{Regexp.quote name}.*?\}.{0,20})/, 1]
-                log.warn "In file `#{object.file}':#{object.line}: Cannot resolve link to #{obj.path} from text" + (match ? ":" : ".")
-                log.warn '...' + match.gsub(/\n/,"\n\t") + '...' if match
-              end
-              "<tt>" + linkify(obj, title) + "</tt>" 
+            link = linkify(name, title)
+            if link == name || link == title
+              match = /(.+)?(\{#{Regexp.quote name}(?:\s.*?)?\})(.+)?/.match(text)
+              file = (@file ? @file : object.file) || '(unknown)'
+              line = (@file ? 1 : (object.docstring.line_range ? object.docstring.line_range.first : 1)) + (match ? $`.count("\n") : 0)
+              log.warn "In file `#{file}':#{line}: Cannot resolve link to #{name} from text" + (match ? ":" : ".")
+              log.warn((match[1] ? '...' : '') + match[2].gsub("\n","") + (match[3] ? '...' : '')) if match
             end
+            
+            link
           end
         end
       end
-
-      def format_object_name_list(objects)
-        objects.sort_by {|o| o.name.to_s.downcase }.map do |o| 
-          "<span class='name'>" + linkify(o, o.name) + "</span>" 
-        end.join(", ")
-      end
       
-      # Formats a list of types from a tag.
-      # 
-      # @param [Array<String>, FalseClass] typelist
-      #   the list of types to be formatted. 
-      # 
-      # @param [Boolean] brackets omits the surrounding 
-      #   brackets if +brackets+ is set to +false+.
-      # 
-      # @return [String] the list of types formatted
-      #   as [Type1, Type2, ...] with the types linked
-      #   to their respective descriptions.
-      # 
-      def format_types(typelist, brackets = true)
-        return unless typelist.is_a?(Array)
-        list = typelist.map do |type| 
-          type = type.gsub(/([<>])/) { h($1) }
-          type = type.gsub(/([\w:]+)/) { $1 == "lt" || $1 == "gt" ? $1 : linkify($1, $1) }
-          "<tt>" + type + "</tt>"
-        end
-        list.empty? ? "" : (brackets ? "(#{list.join(", ")})" : list.join(", "))
-      end
-      
+      # (see BaseHelper#link_file)
       def link_file(filename, title = nil, anchor = nil)
         link_url(url_for_file(filename, anchor), title)
       end
+      
+      # (see BaseHelper#link_include_object)
+      def link_include_object(obj)
+        htmlify(obj.docstring)
+      end
     
+      # (see BaseHelper#link_object)
       def link_object(obj, otitle = nil, anchor = nil, relative = true)
         return otitle if obj.nil?
         obj = Registry.resolve(object, obj, true, true) if obj.is_a?(String)
@@ -180,25 +221,28 @@ module YARD
           title = h(obj.to_s)
         end
         return title unless serializer
-
         return title if obj.is_a?(CodeObjects::Proxy)
-      
+              
         link = url_for(obj, anchor, relative)
-        link ? link_url(link, title, :title => "#{obj.path} (#{obj.type})") : title
+        link = link ? link_url(link, title, :title => "#{obj.path} (#{obj.type})") : title
+        "<span class='object_link'>" + link + "</span>"
       end
       
+      # (see BaseHelper#link_url)
       def link_url(url, title = nil, params = {})
+        title ||= url
         params = SymbolHash.new(false).update(
           :href => url,
-          :title  => h(title || url)
+          :title  => h(title)
         ).update(params)
+        params[:target] ||= '_parent' if url =~ /^(\w+):\/\//
         "<a #{tag_attrs(params)}>#{title}</a>"
       end
       
-      def tag_attrs(opts = {})
-        opts.sort_by {|k, v| k.to_s }.map {|k,v| "#{k}=#{v.to_s.inspect}" if v }.join(" ")
-      end
+      # @group URL Helpers
     
+      # @param [CodeObjects::Base] object the object to get an anchor for
+      # @return [String] the anchor for a specific object
       def anchor_for(object)
         case object
         when CodeObjects::MethodObject
@@ -214,6 +258,12 @@ module YARD
         end
       end
     
+      # Returns the URL for an object.
+      # 
+      # @param [String, CodeObjects::Base] obj the object (or object path) to link to
+      # @param [String] anchor the anchor to link to
+      # @param [Boolean] relative use a relative or absolute link
+      # @return [String] the URL location of the object
       def url_for(obj, anchor = nil, relative = true)
         link = nil
         return link unless serializer
@@ -242,6 +292,11 @@ module YARD
         link + (anchor ? '#' + urlencode(anchor_for(anchor)) : '')
       end
       
+      # Returns the URL for a specific file
+      # 
+      # @param [String] filename the filename to link to
+      # @param [String] anchor optional anchor
+      # @return [String] the URL pointing to the file
       def url_for_file(filename, anchor = nil)
         fromobj = object
         if CodeObjects::Base === fromobj && !fromobj.is_a?(CodeObjects::NamespaceObject)
@@ -257,6 +312,44 @@ module YARD
         link + '.html' + (anchor ? '#' + urlencode(anchor) : '')
       end
       
+      # @group Formatting Objects and Attributes
+
+      # Formats a list of objects and links them
+      # @return [String] a formatted list of objects
+      def format_object_name_list(objects)
+        objects.sort_by {|o| o.name.to_s.downcase }.map do |o| 
+          "<span class='name'>" + linkify(o, o.name) + "</span>" 
+        end.join(", ")
+      end
+      
+      # Formats a list of types from a tag.
+      # 
+      # @param [Array<String>, FalseClass] typelist
+      #   the list of types to be formatted. 
+      # 
+      # @param [Boolean] brackets omits the surrounding 
+      #   brackets if +brackets+ is set to +false+.
+      # 
+      # @return [String] the list of types formatted
+      #   as [Type1, Type2, ...] with the types linked
+      #   to their respective descriptions.
+      # 
+      def format_types(typelist, brackets = true)
+        return unless typelist.is_a?(Array)
+        list = typelist.map do |type| 
+          type = type.gsub(/([<>])/) { h($1) }
+          type = type.gsub(/([\w:]+)/) { $1 == "lt" || $1 == "gt" ? $1 : linkify($1, $1) }
+          "<tt>" + type + "</tt>"
+        end
+        list.empty? ? "" : (brackets ? "(#{list.join(", ")})" : list.join(", "))
+      end
+      
+      # Get the return types for a method signature.
+      # 
+      # @param [CodeObjects::MethodObject] meth the method object
+      # @param [Boolean] link whether to link the types
+      # @return [String] the signature types 
+      # @since 0.5.3
       def signature_types(meth, link = true)
         meth = convert_method_to_overload(meth)
 
@@ -282,12 +375,21 @@ module YARD
         type
       end
       
+      # Formats the signature of method +meth+.
+      # 
+      # @param [CodeObjects::MethodObject] meth the method object to list
+      #   the signature of
+      # @param [Boolean] link whether to link the method signature to the details view
+      # @param [Boolean] show_extras whether to show extra meta-data (visibility, attribute info)
+      # @param [Boolean] full_attr_name whether to show the full attribute name 
+      #   ("name=" instead of "name")
+      # @return [String] the formatted method signature
       def signature(meth, link = true, show_extras = true, full_attr_name = true)
         meth = convert_method_to_overload(meth)
         
         type = signature_types(meth, link)
         scope = meth.scope == :class ? "+" : "-"
-        name = full_attr_name ? meth.name : meth.name.to_s.gsub(/=$/, '')
+        name = full_attr_name ? meth.name : meth.name.to_s.gsub(/^(\w+)=$/, '\1')
         blk = format_block(meth)
         args = !full_attr_name && meth.writer? ? "" : format_args(meth)
         extras = []
@@ -314,26 +416,42 @@ module YARD
         end
       end
       
-      def html_syntax_highlight(source, type = :ruby)
-        return "" unless source
-        return source if options[:no_highlight]
-        
-        # handle !!!LANG prefix to send to html_syntax_highlight_LANG
-        if source =~ /\A[ \t]*!!!(\w+)[ \t]*\r?\n/
-          type, source = $1, $'
-          source = $'
+      # @group Getting the Character Encoding
+      
+      # Returns the current character set. The default value can be overridden
+      # by setting the +LANG+ environment variable or by overriding this
+      # method. In Ruby 1.9 you can also modify this value by setting
+      # +Encoding.default_external+.
+      # 
+      # @return [String] the current character set
+      # @since 0.5.4
+      def charset
+        return 'utf-8' unless RUBY19 || lang = ENV['LANG']
+        if RUBY19
+          lang = Encoding.default_external.name.downcase
+        else
+          lang = lang.downcase.split('.').last
         end
-        
-        meth = "html_syntax_highlight_#{type}"
-        respond_to?(meth) ? send(meth, source) : h(source)
+        case lang
+        when "ascii-8bit", "us-ascii", "ascii-7bit"; 'iso-8859-1'
+        else; lang
+        end
       end
       
-      def html_syntax_highlight_plain(source)
-        h(source)
-      end
+      # @endgroup
       
       private
       
+      # Converts a set of hash options into HTML attributes for a tag
+      # 
+      # @param [Hash{String => String}] opts the tag options
+      # @return [String] the tag attributes of an HTML tag
+      def tag_attrs(opts = {})
+        opts.sort_by {|k, v| k.to_s }.map {|k,v| "#{k}=#{v.to_s.inspect}" if v }.join(" ")
+      end
+      
+      # Converts a {CodeObjects::MethodObject} into an overload object
+      # @since 0.5.3
       def convert_method_to_overload(meth)
         # use first overload tag if it has a return type and method itself does not
         if !meth.tag(:return) && meth.tags(:overload).size == 1 && meth.tag(:overload).tag(:return)

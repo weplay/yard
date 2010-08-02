@@ -6,6 +6,7 @@ def init
   options[:readme] = options[:files].first
   options[:title] ||= "Documentation by YARD #{YARD::VERSION}"
   
+  return serialize_onefile if options[:onefile]
   generate_assets
   serialize('_index.html')
   options[:files].each_with_index do |file, i| 
@@ -31,6 +32,14 @@ def serialize(object)
   serialize_index(options) if object == '_index.html' && options[:files].empty?
   Templates::Engine.with_serializer(object, options[:serializer]) do
     T('layout').run(options)
+  end
+end
+
+def serialize_onefile
+  options[:css_data] = file('css/style.css', true) + "\n" + file('css/common.css', true)
+  options[:js_data] = file('js/jquery.js', true) + file('js/app.js', true)
+  Templates::Engine.with_serializer('index.html', options[:serializer]) do
+    T('onefile').run(options)
   end
 end
 
@@ -82,6 +91,7 @@ def generate_method_list
 end
 
 def generate_class_list
+  @items = options[:objects]
   @list_title = "Class List"
   @list_type = "class"
   asset('class_list.html', erb(:full_list))
@@ -104,9 +114,9 @@ def class_list(root = Registry.root)
   out = ""
   children = run_verifier(root.children)
   if root == Registry.root
-    children += Registry.all(:class, :module).select {|o| o.namespace.is_a?(CodeObjects::Proxy) }
+    children += @items.select {|o| o.namespace.is_a?(CodeObjects::Proxy) }
   end
-  children.sort_by {|child| child.path }.map do |child|
+  children.reject {|c| c.nil? }.sort_by {|child| child.path }.map do |child|
     if child.is_a?(CodeObjects::NamespaceObject)
       name = child.namespace.is_a?(CodeObjects::Proxy) ? child.path : child.name
       has_children = child.children.any? {|o| o.is_a?(CodeObjects::NamespaceObject) }

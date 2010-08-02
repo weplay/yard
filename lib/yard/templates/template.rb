@@ -3,7 +3,8 @@ require 'erb'
 module YARD
   module Templates
     module Template
-      attr_accessor :class, :options, :subsections, :section
+      attr_accessor :class, :section
+      attr_reader :options
       
       class << self
         # @return [Array<Module>] a list of modules to be automatically included
@@ -18,6 +19,7 @@ module YARD
       
       self.extra_includes = []
       
+      include ErbCache
       include Helpers::BaseHelper
       include Helpers::MethodHelper
 
@@ -92,6 +94,13 @@ module YARD
         def T(*path)
           Engine.template(*path)
         end
+        
+        # Alias for creating a {Section} with arguments
+        # @see Section#initialize
+        # @since 0.6.0
+        def S(*args)
+          Section.new(*args)
+        end
       
         private
 
@@ -109,7 +118,7 @@ module YARD
         end
         
         def include_inherited(full_paths)
-          full_paths.each do |full_path|
+          full_paths.reverse.each do |full_path|
             include Engine.template!(path, full_path)
           end
         end
@@ -164,7 +173,7 @@ module YARD
       #   templates, they will have {Template::ClassMethods#run} called on them. 
       #   Any subsections can be yielded to using yield or {#yieldall}
       def sections(*args)
-        @sections.replace(args) if args.size > 0
+        @sections = Section.new(nil, *args) if args.size > 0
         @sections
       end
       
@@ -175,6 +184,7 @@ module YARD
       #   def init
       #     sections :section1, :section2, [:subsection1, :etc]
       #   end
+      # @see #sections
       def init
       end
     
@@ -182,7 +192,7 @@ module YARD
       # not be called directly. Instead, call the class method {ClassMethods#run}
       # 
       # @param [Hash, nil] opts any extra options to apply to sections
-      # @param [Array] sects a list of sections to render
+      # @param [Section, Array] sects a section list of sections to render
       # @param [Fixnum] start_at the index in the section list to start from
       # @param [Boolean] break_first if true, renders only the first section
       # @yield [opts] calls for the subsections to be rendered
@@ -192,20 +202,16 @@ module YARD
         out = ""
         return out if sects.nil?
         sects = sects[start_at..-1] if start_at > 0
+        sects = Section.new(nil, sects) unless sects.is_a?(Section)
         add_options(opts) do
-          sects.each_with_index do |s, index|
-            next if Array === s
+          sects.each do |s|
             self.section = s
-            self.subsections = sects[index + 1]
             subsection_index = 0
             value = render_section(section) do |*args|
               value = with_section do
-                run(args.first, subsections, subsection_index, true, &block)
+                run(args.first, section, subsection_index, true, &block)
               end
               subsection_index += 1 
-              subsection_index += 1 until subsections.nil? ||
-                subsections[subsection_index].nil? || 
-                !subsections[subsection_index].is_a?(Array)
               value
             end
             out << (value || "")
@@ -219,15 +225,17 @@ module YARD
       # 
       # @param [Hash] opts extra options to be applied to subsections
       def yieldall(opts = nil, &block)
-        with_section { run(opts, subsections, &block) }
+        with_section { run(opts, section, &block) }
       end
     
       # @param [String, Symbol] section the section name
       # @yield calls subsections to be rendered
       # @return [String] the contents of the ERB rendered section
       def erb(section, &block)
-        erb = erb_with(cache(section), cache_filename(section))
-        erb.result(binding, &block)
+        method_name = ErbCache.method_for(cache_filename(section)) do
+          erb_with(cache(section), cache_filename(section))
+        end
+        send(method_name, &block)
       end
       
       # Returns the contents of a file. If +allow_inherited+ is set to +true+,
@@ -271,8 +279,8 @@ module YARD
       def superb(section = section, &block)
         filename = self.class.find_nth_file(erb_file_for(section), 2)
         return "" unless filename
-        erb = erb_with(IO.read(filename), filename)
-        erb.result(binding, &block)
+        method_name = ErbCache.method_for(filename) { erb_with(IO.read(filename), filename) }
+        send(method_name, &block)
       end
       
       def options=(value)
@@ -281,7 +289,7 @@ module YARD
       end
       
       def inspect
-        "Template(#{self.class.path}) [section=#{section}]"
+        "Template(#{self.class.path}) [section=#{section.name}]"
       end
     
       protected
@@ -298,13 +306,10 @@ module YARD
     
       private
     
-      def subsections=(value)
-        @subsections = Array === value ? value : nil
-      end
-    
       def render_section(section, &block)
+        section = section.name if section.is_a?(Section)
         case section
-        when String, Symbol
+        when Section, String, Symbol
           if respond_to?(section)
             send(section, &block) 
           else
@@ -319,14 +324,15 @@ module YARD
         content = @cache[section.to_sym]
         return content if content
       
-        file = self.class.find_file(erb_file_for(section))
+        file = cache_filename(section)
         @cache_filename[section.to_sym] = file
         raise ArgumentError, "no template for section '#{section}' in #{self.class.path}" unless file
         @cache[section.to_sym] = IO.read(file)
       end
       
       def cache_filename(section)
-        @cache_filename[section.to_sym]
+        @cache_filename[section.to_sym] ||=
+          self.class.find_file(erb_file_for(section))
       end
       
       def set_ivars
@@ -349,9 +355,9 @@ module YARD
       end
       
       def with_section(&block)
-        s1, s2 = section, subsections
+        sect = section
         value = yield
-        self.section, self.subsections = s1, s2
+        self.section = sect
         value
       end
     end

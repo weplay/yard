@@ -9,14 +9,14 @@ SPEC = Gem::Specification.new do |s|
     custom Ruby constructs such as custom class level definitions.
   eof
   s.version       = YARD::VERSION
-  s.date          = "2010-01-11"
+  s.date          = "2010-06-22"
   s.author        = "Loren Segal"
   s.email         = "lsegal@soen.ca"
   s.homepage      = "http://yardoc.org"
   s.platform      = Gem::Platform::RUBY
-  s.files         = Dir.glob("{docs,bin,lib,spec,templates,benchmarks}/**/*") + ['ChangeLog', 'LICENSE', 'README.md', 'Rakefile', '.yardopts']
+  s.files         = Dir.glob("{docs,bin,lib,spec,templates,benchmarks}/**/*") + ['ChangeLog', 'LICENSE', 'LEGAL', 'README.md', 'Rakefile', '.yardopts']
   s.require_paths = ['lib']
-  s.executables   = [ 'yardoc', 'yri', 'yard-graph' ]
+  s.executables   = ['yard', 'yardoc', 'yri']
   s.has_rdoc      = 'yard'
   s.rubyforge_project = 'yard'
 end

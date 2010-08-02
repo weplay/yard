@@ -3,35 +3,32 @@ module YARD
     # A command-line utility to generate Graphviz graphs from
     # a set of objects
     # 
-    # @see YardGraph#run
-    class YardGraph < Base
+    # @see Graph#run
+    # @since 0.6.0
+    class Graph < Command
       # The options parsed out of the commandline.
       # Default options are:
-      #   :format => :dot,
-      #   :visibilities => [:public]
+      #   :format => :dot
       attr_reader :options
       
       # The set of objects to include in the graph.
       attr_reader :objects
 
-      # Helper method to run the utility on an instance.
-      # @see #run
-      def self.run(*args) new.run(*args) end
-        
       # Creates a new instance of the command-line utility
       def initialize
         super
         @serializer = YARD::Serializers::StdoutSerializer.new
-        @options = SymbolHash[
-          :format => :dot,
-          :visibilities => [:public]
-        ]
+        @options = SymbolHash[:format => :dot]
       end
       
+      def description
+        "Graphs class diagram using Graphviz"
+      end
+    
       # Runs the command-line utility.
       # 
       # @example
-      #   grapher = YardGraph.new
+      #   grapher = Graph.new
       #   grapher.run('--private')
       # @param [Array<String>] args each tokenized argument
       def run(*args)
@@ -39,8 +36,9 @@ module YARD
         optparse(*args)
         
         contents = objects.map {|o| o.format(options) }.join("\n")
-        Templates::Engine.render(:format => :dot, :type => :layout, 
-          :serializer => @serializer, :contents => contents) 
+        Templates::Engine.render(:format => :dot, :type => :layout,
+          :verifier => @verifier, :serializer => @serializer,
+          :contents => contents)
       end
       
       private
@@ -48,6 +46,7 @@ module YARD
       # Parses commandline options.
       # @param [Array<String>] args each tokenized argument
       def optparse(*args)
+        visibilities = []
         opts = OptionParser.new
 
         opts.separator ""
@@ -66,15 +65,15 @@ module YARD
         end
         
         opts.on('--no-public', "Don't show public methods. (default shows public)") do 
-          options[:visibilities].delete(:public)
+          visibilities.delete(:public)
         end
 
         opts.on('--protected', "Show or don't show protected methods. (default hides protected)") do
-          options[:visibilities].push(:protected)
+          visibilities.push(:protected)
         end
 
         opts.on('--private', "Show or don't show private methods. (default hides private)") do 
-          options[:visibilities].push(:private) 
+          visibilities.push(:private)
         end
 
         opts.separator ""
@@ -90,18 +89,13 @@ module YARD
         end
         
         common_options(opts)
+        parse_options(opts, args)
 
-        begin
-          opts.parse!(args)
-          if args.first
-            @objects = args.map {|o| Registry.at(o) }.compact
-          else
-            @objects = [Registry.root]
-          end
-        rescue => e
-          STDERR.puts e.message
-          STDERR << "\n" << opts
-          exit
+        @verifier = Verifier.new("object.type != :method || #{visibilities.uniq.inspect}.include?(object.visibility)")
+        if args.first
+          @objects = args.map {|o| Registry.at(o) }.compact
+        else
+          @objects = [Registry.root]
         end
       end
     end

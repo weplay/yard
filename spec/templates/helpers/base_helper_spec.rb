@@ -5,7 +5,7 @@ describe YARD::Templates::Helpers::BaseHelper do
   
   describe '#run_verifier' do
     it "should run verifier proc against list if provided" do
-      mock = mock(:verifier)
+      mock = Verifier.new
       mock.should_receive(:call).with(1)
       mock.should_receive(:call).with(2)
       mock.should_receive(:call).with(3)
@@ -14,7 +14,7 @@ describe YARD::Templates::Helpers::BaseHelper do
     end
     
     it "should prune list if lambda returns false and only false" do
-      mock = mock(:verifier)
+      mock = Verifier.new
       should_receive(:options).at_least(1).times.and_return(:verifier => mock)
       mock.should_receive(:call).with(1).and_return(false)
       mock.should_receive(:call).with(2).and_return(true)
@@ -60,6 +60,23 @@ describe YARD::Templates::Helpers::BaseHelper do
   describe '#link_url' do
     it "should return the URL" do
       link_url("http://url").should == "http://url"
+    end
+  end
+  
+  describe '#linkify' do
+    it "should call #link_url for mailto: links" do
+      should_receive(:link_url)
+      linkify("mailto:steve@example.com")
+    end
+    
+    it "should call #link_url for URL schemes (http://)" do
+      should_receive(:link_url)
+      linkify("http://example.com")
+    end
+    
+    it "should call #link_file for file: links" do
+      should_receive(:link_file).with('Filename', 'Filename', 'anchor')
+      linkify("file:Filename#anchor")
     end
   end
   
@@ -122,7 +139,7 @@ describe YARD::Templates::Helpers::BaseHelper do
   
     it "should pass off to #link_url if argument is recognized as a URL" do
       url = "http://yardoc.org/"
-      should_receive(:link_url).with(url)
+      should_receive(:link_url).with(url, nil, {:target => '_parent'})
       linkify url
     end
   end

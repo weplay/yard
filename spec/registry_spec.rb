@@ -137,6 +137,17 @@ describe YARD::Registry do
       Registry.resolve(yard, "class_hello", false).should be_nil
       Registry.resolve(yard, "class_hello", true).should == cmeth
     end
+    
+    it "should only check 'Path' in lookup on root namespace" do
+      Registry.instance.should_receive(:at).once.with('Test').and_return(true)
+      Registry.resolve(Registry.root, "Test")
+    end
+    
+    it "should not perform lookup by joining namespace and name without separator" do
+      yard = ClassObject.new(:root, :YARD)
+      Registry.instance.should_not_receive(:at).with('YARDB')
+      Registry.resolve(yard, 'B')
+    end
   end
   
   describe '#all' do
@@ -173,15 +184,20 @@ describe YARD::Registry do
   end
   
   describe '#load_yardoc' do
-    before do
-      @store = RegistryStore.new
-      RegistryStore.should_receive(:new).and_return(@store)
-    end
-    
     it "should delegate load to RegistryStore" do
-      @store.should_receive(:load).with('foo')
+      store = RegistryStore.new
+      store.should_receive(:load).with('foo')
+      RegistryStore.should_receive(:new).and_return(store)
       Registry.yardoc_file = 'foo'
       Registry.load_yardoc
+    end
+    
+    it "should maintain hash key equality on loaded objects" do
+      Registry.clear
+      Registry.load!(File.dirname(__FILE__) + '/serializers/data/serialized_yardoc')
+      baz = Registry.at('Foo#baz')
+      Registry.at('Foo').aliases.keys.should include(baz)
+      Registry.at('Foo').aliases.has_key?(baz).should == true
     end
   end
 end

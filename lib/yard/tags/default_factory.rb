@@ -4,7 +4,6 @@ module YARD
       TYPELIST_OPENING_CHARS = '[({<'
       TYPELIST_CLOSING_CHARS = '>})]'
       
-      ##
       # Parses tag text and creates a new tag with descriptive text
       #
       # @param tag_name        the name of the tag to parse
@@ -14,7 +13,6 @@ module YARD
         Tag.new(tag_name, text)
       end
       
-      ##
       # Parses tag text and creates a new tag with a key name and descriptive text
       #
       # @param tag_name        the name of the tag to parse
@@ -25,7 +23,6 @@ module YARD
         Tag.new(tag_name, text, nil, name)
       end
       
-      ##
       # Parses tag text and creates a new tag with formally declared types and 
       # descriptive text
       #
@@ -38,7 +35,6 @@ module YARD
         Tag.new(tag_name, text, types)
       end
       
-      ##
       # Parses tag text and creates a new tag with formally declared types, a key 
       # name and descriptive text
       #
@@ -51,12 +47,8 @@ module YARD
         Tag.new(tag_name, text, types, name)
       end
       
-      def parse_tag_with_raw_text(tag_name, text, raw_text)
-        Tag.new(tag_name, raw_text)
-      end
-      
-      def parse_tag_with_raw_title_and_text(tag_name, text, raw_text)
-        title, desc = *extract_title_and_desc_from_raw_text(raw_text)
+      def parse_tag_with_title_and_text(tag_name, text)
+        title, desc = *extract_title_and_desc_from_text(text)
         Tag.new(tag_name, desc, nil, title)
       end
       
@@ -80,54 +72,41 @@ module YARD
       
       private
       
-      ##
       # Extracts the name from raw tag text returning the name and remaining value
       #
       # @param [String] text the raw tag text
       # @return [Array] an array holding the name as the first element and the 
       #                 value as the second element
       def extract_name_from_text(text)
-        text.strip.split(" ", 2)
+        text.strip.split(/\s+/, 2)
       end
-      
-      ##
-      # Extracts the type signatures and optional name from the raw tag text
-      #
-      # @param [String] text the raw tag text
-      # @return [Array] an array holding the value as the first element and
-      #                 the array of types as the second element
-      def extract_types_and_name_from_text(text)
-        text = text.strip
-        types, range, name = *parse_types(text)
-        [name, types, (range ? text[(range.end+1)..-1].strip : text)]
-      end
-      
-      def extract_title_and_desc_from_raw_text(raw_text)
+            
+      def extract_title_and_desc_from_text(text)
         title, desc = nil, nil
-        if raw_text =~ /\A[ \t]\n/
-          desc = raw_text
+        if text =~ /\A[ \t]\n/
+          desc = text
         else
-          raw_text = raw_text.split(/\r?\n/)
-          title = raw_text.shift.squeeze(' ').strip
-          desc = raw_text.join("\n")
+          text = text.split(/\r?\n/)
+          title = text.shift.squeeze(' ').strip
+          desc = text.join("\n")
         end
         [title, desc]
       end
       
-      # Parses a [], <>, {} or () block at the beginning of a line of text into a list of
-      # comma delimited values. Returns the text be
+      # Parses a [], <>, {} or () block at the beginning of a line of text 
+      # into a list of comma delimited values.
       # 
       # @example
       #   obj.parse_types('[String, Array<Hash, String>, nil]') # => [nil, ['String', 'Array<Hash, String>', 'nil'], ""]
       #   obj.parse_types('b<String> A string') # => ['b', ['String'], 'A string']
       # 
-      # @return [String, Array<String>] the text before the type list (or nil), followed by the type list parsed
-      #   into an array of strings, followed by the text following the type list.
-      # @return [nil] if no type list is present.
+      # @return [Array(String, Array<String>, String)] the text before the type 
+      #   list (or nil), followed by the type list parsed into an array of 
+      #   strings, followed by the text following the type list.
       def extract_types_and_name_from_text(text, opening_types = TYPELIST_OPENING_CHARS, closing_types = TYPELIST_CLOSING_CHARS)
         s, e = 0, 0
         before = ''
-        list, level = [''], 0
+        list, level, seen_space = [''], 0, false
         text.split(//).each_with_index do |c, i|
           if opening_types.include?(c)
             list.last << c if level > 0
@@ -140,7 +119,10 @@ module YARD
           elsif c == ',' && level == 1
             list.push ''
           elsif c =~ /\S/ && level == 0
+            break e = i if seen_space && list == ['']
             before << c
+          elsif c =~ /\s/ && level == 0 && !before.empty?
+            seen_space = true
           elsif level >= 1
             list.last << c
           end

@@ -1,8 +1,10 @@
 module YARD::CodeObjects
+  # A ClassObject represents a Ruby class in source code. It is a {ModuleObject}
+  # with extra inheritance semantics through the superclass.
   class ClassObject < NamespaceObject
     # The {ClassObject} that this class object inherits from in Ruby source.
     # @return [ClassObject] a class object that is the superclass of this one
-    attr_accessor :superclass
+    attr_reader :superclass
     
     # Creates a new class object in +namespace+ with +name+
     # 
@@ -11,15 +13,15 @@ module YARD::CodeObjects
       super
 
       if is_exception?
-        self.superclass ||= :Exception unless P(namespace, name) == P(:Exception)
+        self.superclass ||= "::Exception" unless P(namespace, name) == P(:Exception)
       else
         case P(namespace, name).path
         when "BasicObject"
           nil
         when "Object"
-          self.superclass ||= :BasicObject
+          self.superclass ||= "::BasicObject"
         else
-          self.superclass ||= :Object
+          self.superclass ||= "::Object"
         end
       end
     end
@@ -38,14 +40,14 @@ module YARD::CodeObjects
     # @return [Array<NamespaceObject>] the list of code objects that make up
     #   the inheritance tree.
     def inheritance_tree(include_mods = false)
-      list = (include_mods ? mixins(:instance) : [])
+      list = (include_mods ? mixins(:instance, :class) : [])
       if superclass.is_a?(Proxy) || superclass.respond_to?(:inheritance_tree)
         list += [superclass] unless superclass == P(:Object) || superclass == P(:BasicObject)
       end
       [self] + list.map do |m|
         next m unless m.respond_to?(:inheritance_tree)
         m.inheritance_tree(include_mods)
-      end.flatten
+      end.flatten.uniq
     end
     
     # Returns the list of methods matching the options hash. Returns
@@ -59,7 +61,12 @@ module YARD::CodeObjects
     # @return [Array<MethodObject>] the list of methods that matched
     def meths(opts = {})
       opts = SymbolHash[:inherited => true].update(opts)
-      super(opts) + (opts[:inherited] ? inherited_meths(opts) : [])
+      list = super(opts) 
+      list += inherited_meths(opts).reject do |o|
+        next(false) if opts[:all]
+        list.find {|o2| o2.name == o.name && o2.scope == o.scope }
+      end if opts[:inherited]
+      list
     end
     
     # Returns only the methods that were inherited.
@@ -71,6 +78,7 @@ module YARD::CodeObjects
           list
         else
           list += superclass.meths(opts).reject do |o|
+            next(false) if opts[:all]
             child(:name => o.name, :scope => o.scope) ||
               list.find {|o2| o2.name == o.name && o2.scope == o.scope }
           end
@@ -126,7 +134,7 @@ module YARD::CodeObjects
       
       if @superclass == self
         msg = "superclass #{@superclass.inspect} cannot be the same as the declared class #{self.inspect}"
-        @superclass = P(:Object)
+        @superclass = P("::Object")
         raise ArgumentError, msg
       end
     end

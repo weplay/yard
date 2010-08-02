@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + '/spec_helper'
 
-describe YARD::Templates::Engine.template(:default, :method) do
+describe YARD::Templates::Engine.template(:default, :module) do
   before do 
     Registry.clear
     YARD.parse_string <<-'eof'
@@ -47,14 +47,22 @@ describe YARD::Templates::Engine.template(:default, :method) do
         class Q; end
         class X; end
         module Z; end
+        # A long docstring for the constant. With extra text
+        # and newlines.
         CONSTANT = 'value'
         @@cvar = 'value' # @deprecated
       end
+      
+      module TMP; include A end
+      class TMP2; extend A end
     eof
   end
 
   it "should render html format correctly" do
-    html_equals(Registry.at('A').format(:format => :html, :no_highlight => true, :hide_void_return => true, :visibilities => [:public]), :module001)
+    html_equals(Registry.at('A').format(
+          :format => :html, :no_highlight => true, :hide_void_return => true,
+          :verifier => Verifier.new('object.type != :method || object.visibility == :public')),
+        :module001)
   end
 
   it "should render text format correctly" do
@@ -69,5 +77,26 @@ describe YARD::Templates::Engine.template(:default, :method) do
   
   it "should render dot format correctly" do
     Registry.at('A').format(:format => :dot, :dependencies => true, :full => true).should == example(:module001, 'dot')
+  end
+  
+  it "should render groups correctly in html" do
+    Registry.clear
+    YARD.parse_string <<-'eof'
+      module A
+        # @group Foo
+        attr_accessor :foo_attr
+        def foo; end
+        def self.bar; end
+        
+        # @group Bar
+        def baz; end
+        
+        # @endgroup
+         
+        def self.baz; end
+      end
+    eof
+    
+    html_equals(Registry.at('A').format(:format => :html, :no_highlight => true), :module002)
   end
 end

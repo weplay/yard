@@ -6,13 +6,13 @@ module YARD
       # The following list of tokens will require a block to be opened 
       # if used at the beginning of a statement.
       OPEN_BLOCK_TOKENS = [TkCLASS, TkDEF, TkMODULE, TkUNTIL,
-                           TkIF, TkUNLESS, TkWHILE, TkFOR, TkCASE]
+                           TkIF, TkELSIF, TkUNLESS, TkWHILE, TkFOR, TkCASE]
 
-      ##
       # Creates a new statement list
       #
       # @param [TokenList, String] content the tokens to create the list from
       def initialize(content)
+        @group = nil
         if content.is_a? TokenList
           @tokens = content.dup
         elsif content.is_a? String
@@ -24,17 +24,12 @@ module YARD
         parse_statements
       end
       
-      def enumerator
-        self
-      end
-
       private
 
       def parse_statements
         while stmt = next_statement do self << stmt end
       end
 
-      ##
       # Returns the next statement in the token stream
       #
       # @return [Statement] the next statement
@@ -66,6 +61,7 @@ module YARD
           sanitize_block
           @statement.pop if [TkNL, TkSPACE, TkSEMICOLON].include?(@statement.last.class)
           stmt = Statement.new(@statement, @block, @comments)
+          stmt.group = @group
           if @comments && @comments_line
             stmt.comments_range = (@comments_line..(@comments_line + @comments.size - 1))
           end
@@ -105,15 +101,32 @@ module YARD
           end
         end
       end
+      
+      def preprocess_token(tk)
+        if tk.is_a?(TkCOMMENT)
+          case tk.text
+          when /\A# @group\s+(.+)\s*\Z/
+            @group = $1
+            true
+          when /\A# @endgroup\s*\Z/
+            @group = nil
+            true
+          else
+            false
+          end
+        else
+          false
+        end
+      end
 
-      ##
       # Processes a single token
       #
       # @param [RubyToken::Token] tk the token to process
       def process_token(tk)
-        # p tk.text, @state, @level, @current_block, "<br/>"
+        # p tk.class, tk.text, @state, @level, @current_block, "<br/>"
         case @state
         when :first_statement
+          return if preprocess_token(tk)
           return if process_initial_comment(tk)
           return if @statement.empty? && [TkSPACE, TkNL, TkCOMMENT].include?(tk.class)
           @comments_last_line = nil
@@ -156,7 +169,6 @@ module YARD
         end
       end
 
-      ##
       # Processes a token in a block
       #
       # @param [RubyToken::Token] tk the token to process
@@ -175,7 +187,6 @@ module YARD
         end
       end
 
-      ##
       # Processes a comment token that comes before a statement
       #
       # @param [RubyToken::Token] tk the token to process
@@ -196,20 +207,25 @@ module YARD
         # Since, of course, the convention is to have "# text"
         # and not "#text", which I deem ugly (you heard it here first)
         @comments ||= []
-        @comments << tk.text.gsub(/^#+\s{0,1}/, '')
+        if tk.text =~ /\A=begin/
+          lines = tk.text.count("\n")
+          @comments += tk.text.gsub(/\A=begin.*\r?\n|\r?\n=end.*\r?\n?\Z/, '').split(/\r?\n/)
+          @comments_last_line = tk.line_no + lines
+        else
+          @comments << tk.text.gsub(/^#+\s{0,1}/, '')
+          @comments_last_line = tk.line_no
+        end
         @comments.pop if @comments.size == 1 && @comments.first =~ /^\s*$/
-        @comments_last_line = tk.line_no
         true
       end
 
-      ##
       # Processes a simple block-opening token;
       # that is, a block opener such as +begin+ or +do+
       # that isn't followed by an expression
       #
       # @param [RubyToken::Token] tk the token to process
       def process_simple_block_opener(tk)
-        return unless [TkLBRACE, TkDO, TkBEGIN].include?(tk.class) &&
+        return unless [TkLBRACE, TkDO, TkBEGIN, TkELSE].include?(tk.class) &&
           # Make sure hashes are parsed as hashes, not as blocks
           (@last_ns_tk.nil? || @last_ns_tk.lex_state != EXPR_BEG)
 
@@ -228,7 +244,6 @@ module YARD
         true
       end
 
-      ##
       # Processes a complex block-opening token;
       # that is, a block opener such as +while+ or +for+
       # that is followed by an expression
@@ -244,7 +259,6 @@ module YARD
         true
       end
 
-      ##
       # Processes a token that closes a statement
       #
       # @param [RubyToken::Token] tk the token to process
@@ -298,7 +312,6 @@ module YARD
         end
       end
 
-      ##
       # Handles the balancing of parentheses and blocks
       #
       # @param [RubyToken::Token] tk the token to process
@@ -308,7 +321,7 @@ module YARD
         if [TkLPAREN, TkLBRACK, TkLBRACE, TkDO, TkBEGIN].include?(tk.class)
           @level += 1
         elsif OPEN_BLOCK_TOKENS.include?(tk.class)
-          @level += 1 unless @last_ns_tk.class == TkALIAS
+          @level += 1 unless @last_ns_tk.class == TkALIAS || tk.class == TkELSIF
         elsif [TkRPAREN, TkRBRACK, TkRBRACE, TkEND].include?(tk.class) && @level > 0
           @level -= 1
         end
@@ -316,7 +329,6 @@ module YARD
         @level == 0
       end
 
-      ##
       # Adds a token to the current statement,
       # unless it's a newline, semicolon, or comment
       #
@@ -326,7 +338,6 @@ module YARD
         @statement << tk unless @level == 0 && [TkCOMMENT].include?(tk.class)
       end
 
-      ##
       # Returns the next token in the stream that's not a space
       #
       # @return [RubyToken::Token] the next non-space token

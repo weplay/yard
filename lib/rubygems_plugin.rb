@@ -1,28 +1,29 @@
 require 'rubygems/specification'
 require 'rubygems/doc_manager'
 
-class Gem::Specification
-  # has_rdoc should not be ignored!
-  overwrite_accessor(:has_rdoc) { @has_rdoc }
-  overwrite_accessor(:has_rdoc=) {|v| @has_rdoc = v }
-  
-  def has_yardoc=(value)
-    @has_rdoc = 'yard'
-  end
-  
-  def has_yardoc
-    @has_rdoc == 'yard'
-  end
-  
-  undef has_rdoc?
-  def has_rdoc?
-    @has_rdoc && @has_rdoc != 'yard'
-  end
-  
-  alias has_yardoc? has_yardoc
-end
-
 unless defined? Gem::DocManager.load_yardoc
+  class Gem::Specification
+    # has_rdoc should not be ignored!
+    overwrite_accessor(:has_rdoc) { @has_rdoc }
+    overwrite_accessor(:has_rdoc=) {|v| @has_rdoc = v }
+  
+    # @since 0.5.3
+    def has_yardoc=(value)
+      @has_rdoc = 'yard'
+    end
+  
+    def has_yardoc
+      @has_rdoc == 'yard'
+    end
+  
+    undef has_rdoc?
+    def has_rdoc?
+      @has_rdoc && @has_rdoc != 'yard'
+    end
+  
+    alias has_yardoc? has_yardoc
+  end
+
   class Gem::DocManager
     def self.load_yardoc
       require File.dirname(__FILE__) + '/yard'
@@ -76,6 +77,7 @@ unless defined? Gem::DocManager.load_yardoc
 
     def install_ri_yard
       install_ri_yard_orig if @spec.has_rdoc?
+      return if @spec.has_rdoc? == false
       return if @spec.has_yardoc?
       
       self.class.load_yardoc

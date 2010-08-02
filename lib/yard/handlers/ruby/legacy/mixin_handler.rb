@@ -1,7 +1,8 @@
+# (see Ruby::MixinHandler)
 class YARD::Handlers::Ruby::Legacy::MixinHandler < YARD::Handlers::Ruby::Legacy::Base
   handles /\Ainclude(\s|\()/
   
-  def process
+  process do
     statement.tokens[1..-1].to_s.split(/\s*,\s*/).each do |mixin|
       process_mixin(mixin.strip)
     end
@@ -23,6 +24,6 @@ class YARD::Handlers::Ruby::Legacy::MixinHandler < YARD::Handlers::Ruby::Legacy:
       obj = Proxy.new(namespace, obj.value)
     end
 
-    namespace.mixins(scope) << obj
+    namespace.mixins(scope).unshift(obj) unless namespace.mixins(scope).include?(obj)
   end
 end

@@ -3,9 +3,9 @@ module YARD
     class OverloadTag < Tag
       attr_reader :signature, :parameters, :docstring
       
-      def initialize(tag_name, text, raw_text)
+      def initialize(tag_name, text)
         super(tag_name, nil)
-        parse_tag(raw_text)
+        parse_tag(text)
         parse_signature
       end
       
@@ -35,11 +35,16 @@ module YARD
         object.is_a?(other) || self.class >= other.class || false
       end
       alias kind_of? is_a?
-
-      private
       
-      def parse_tag(raw_text)
-        @signature, text = *raw_text.split(/\r?\n/, 2)
+      private
+
+      if RUBY19
+        def to_a; nil end 
+        def to_ary; nil end
+      end
+      
+      def parse_tag(text)
+        @signature, text = *text.split(/\r?\n/, 2)
         @signature.strip!
         text ||= ""
         numspaces = text[/\A(\s*)/, 1].length

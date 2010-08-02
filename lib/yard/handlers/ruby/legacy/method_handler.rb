@@ -1,7 +1,8 @@
+# (see Ruby::MethodHandler)
 class YARD::Handlers::Ruby::Legacy::MethodHandler < YARD::Handlers::Ruby::Legacy::Base
   handles TkDEF
     
-  def process
+  process do
     nobj = namespace
     mscope = scope
 
@@ -39,6 +40,17 @@ class YARD::Handlers::Ruby::Legacy::MethodHandler < YARD::Handlers::Ruby::Legacy
         obj.tag(:return).types = ['Boolean']
       elsif obj.tag(:return).nil?
         obj.docstring.add_tag(YARD::Tags::Tag.new(:return, "", "Boolean"))
+      end
+    end
+    
+    if obj.has_tag?(:option)
+      # create the options parameter if its missing
+      obj.tags(:option).each do |option|
+        expected_param = option.name
+        unless obj.tags(:param).find {|x| x.name == expected_param }
+          new_tag = YARD::Tags::Tag.new(:param, "a customizable set of options", "Hash", expected_param)
+          obj.docstring.add_tag(new_tag)
+        end
       end
     end
     
