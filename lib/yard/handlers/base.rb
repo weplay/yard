@@ -320,7 +320,7 @@ module YARD
         end
         
         if !defined?(callcc)
-          log.warn "This ruby implementation does not implement Kernel#callcc and cannot load files in order. You must specify the correct order manually."
+          log.debug "This ruby implementation does not implement Kernel#callcc and cannot load files in order. You must specify the correct order manually."
           raise NamespaceMissingError, object
         end
         
