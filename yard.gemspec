@@ -1,5 +1,6 @@
 require File.expand_path(File.dirname(__FILE__) + '/lib/yard')
-SPEC = Gem::Specification.new do |s|
+
+Gem::Specification.new do |s|
   s.name          = "yard"
   s.summary       = "Documentation tool for consistent and usable documentation in Ruby." 
   s.description   = <<-eof
